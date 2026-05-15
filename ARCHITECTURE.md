@@ -1,0 +1,302 @@
+# Architecture
+
+A single Rust binary that simulates Claude Code's core development-assistant workflow on a 1.5 B-parameter local model. Three layers — prompt, tool, agent loop — each carrying mitigations for known failure modes of the model class.
+
+## Module map
+
+```
+src/
+├─ main.rs                clap CLI, server bootstrap, build_tool_surface, REPL
+├─ config.rs              all tunable constants (ctx, sampling, caps, thresholds)
+├─ server.rs              llama-server lifecycle (singleton, attach-or-spawn)
+│
+├─ llm/
+│  ├─ types.rs            ChatMessage, ToolCall, ChatRequest, ChatResponse
+│  ├─ client.rs           ureq blocking client + native tool_calls + text recovery
+│  └─ prompt.rs           system prompt (BFCL v2 + single-action + strict-output)
+│
+├─ tools/
+│  ├─ mod.rs              ToolDef, ToolFn, ToolCallResult, dispatch, validate_args, hard_truncate
+│  ├─ cache.rs            per-session memoization for read-only tools
+│  ├─ fs_utils.rs         fuzzy_find, safe_path, canonicalize_path, walk_gitignore
+│  ├─ fs_read.rs          read_file, list_dir, list_files_recursive, grep
+│  ├─ fs_write.rs         write_file (atomic), edit_file (fuzzy + unique-match)
+│  └─ shell.rs            bash with shlex + metacharacter reject + allowlist
+│
+├─ agent/
+│  ├─ mod.rs              Session, run_turn — the core loop
+│  ├─ context.rs          estimate_tokens, pressure, write-aware elide
+│  ├─ compress.rs         per-tool semantic summarizer (read_file, grep, bash, …)
+│  ├─ coach.rs            harness-level error coaching + failure-memory note
+│  └─ guards.rs           SemanticDedup, ReadTracker, WritePressure
+│
+└─ repl/
+   ├─ mod.rs              rustyline prompt + slash-command dispatch
+   └─ render.rs           compact tool-call / tool-result rendering
+```
+
+Tests live alongside each module (`#[cfg(test)] mod tests`). 81 unit tests as of v1.
+
+## Runtime flow
+
+```
+                                    main.rs::main
+                                         │
+            ┌────────────────────────────┴──────────────────────────────┐
+            │                                                           │
+            ▼                                                           ▼
+    server.rs::ServerHandle::attach_or_spawn                build_tool_surface(cwd)
+            │   - honor LLAMA_SERVER_URL                              │
+            │   - else probe :8080                                    ▼
+            │   - else spawn llama-server with neo-llm-bench flags    Vec<ToolDef>
+            │   - poll /health up to 60s                              (read_file, list_dir,
+            ▼                                                          list_files_recursive,
+       ServerHandle                                                    grep, write_file,
+            │                                                          edit_file, bash)
+            ▼
+       LlmClient::new(server.url)
+            │
+            ▼
+       Session::new(client, tools, cwd, prompt)
+            │
+            ▼
+       repl::run(session)
+            │
+            ▼
+       loop {
+           rustyline.readline()
+                │
+                ├── starts_with('/') → handle_command()
+                └── otherwise → agent::run_turn(state, input)
+       }
+```
+
+The agent loop (`src/agent/mod.rs::run_turn`):
+
+```
+push user message
+loop (max MAX_TURNS=8):
+    if pressure > 0.7 → elide_old_tool_results (write-summaries preserved)
+    response = client.chat(messages, tools)
+    push assistant message
+    if response.tool_calls.is_empty() → render final answer, break
+
+    for each tool_call:
+        if SemanticDedup.record_and_check(name, args) → inject system note, break
+        if write_file/edit_file && !ReadTracker.has_seen(path) → tool-failure stub, continue
+        result = dispatch(name, args, …)              # tool layer enforces 8 KB cap
+        coached = coach::coach(&result)               # prepend hint if error matches pattern
+        push tool result message
+        if let Some(summary) = compress::summarize(&result) → push as system note
+        if result.error → push failure-memory system note
+        if result.is_ok() → ReadTracker.record_read(name, args)
+        if WritePressure.observe(name, ok, bytes) → break early (write-pressure exit)
+```
+
+## Layered survival primitives
+
+### Prompt layer (`src/llm/prompt.rs`)
+
+`system_prompt(cwd)` produces a fixed-template string under ~300 tokens. Five blocks:
+
+1. **Identity** — "You are micro-mind, … operating inside `<cwd>`."
+2. **Tool-use rules** (BFCL v2, lifted verbatim from `neo-llm-bench`):
+   - `N` separate tool calls for `N` inputs (parallel rule)
+   - If no tool satisfies the request, do not call any tool (decline rule)
+   - Use Python operator syntax for math (formatting rule)
+3. **Behaviour rules** (micro-mind original, derived from review):
+   - Single-action bias
+   - Emit tool call immediately, do not narrate
+   - Read before modifying
+   - After write, verify with ONE concise read/test, then stop
+4. **Working directory** (re-stated as a closing reminder)
+
+These rules address 4 of the 17 named failure modes: irrelevance over-call, parallel under-call, agentic drift, over-explaining prose.
+
+### Tool layer (`src/tools/`)
+
+#### Dispatch contract (`mod.rs`)
+
+```rust
+pub fn dispatch(
+    name_raw: &str,
+    arguments: &Value,
+    tool_id: &str,
+    tools: &HashMap<String, ToolDef>,
+    cache: &mut ToolCache,
+) -> ToolCallResult
+```
+
+Five guarantees:
+
+1. **Name normalization**: whitespace stripped before lookup (`luxe` lesson — small models emit `"read_file\n"`).
+2. **Schema validation**: required fields + primitive types before the function runs.
+3. **Caching**: cacheable tools route through `ToolCache::get_or_run` with JSON-canonical keys.
+4. **Crash containment**: a panicking tool produces a `ToolCallResult.error`, not a process crash.
+5. **Hard output truncation**: every result is capped at 8 KB before it leaves the dispatch function. The marker `[truncated: N more bytes. Use grep / offset / max_bytes for more.]` tells the model how to retrieve more.
+
+#### Tool surface
+
+See `README.md §Survival primitives at a glance` for the full table.
+
+#### Atomic write contract (`fs_write.rs::atomic_write`)
+
+```
+1. tmp_path = parent_dir / ".<filename>.tmp.<pid>.<nano>"
+2. open(tmp_path) with O_CREAT|O_EXCL|O_WRONLY
+3. write_all(bytes)
+4. fsync(fd)
+5. drop(fd)
+6. rename(tmp_path, dest_path)
+```
+
+If steps 1–5 fail, `dest_path` is untouched. If step 6 fails (e.g. disk full), the tmp file remains; the next successful write supersedes it. `fs_write.rs::tests::atomic_write_does_not_leave_tmp` verifies the happy path.
+
+#### Fuzzy match contract (`fs_utils.rs::fuzzy_find`)
+
+Normalize both haystack and needle:
+
+- CRLF → LF
+- Trailing whitespace stripped per line
+
+Then exact-string-match the normalized forms; map the match position back to the original haystack coordinates. Returns `FuzzyMatch { start, end, extra_matches }`.
+
+`edit_file` rejects `extra_matches > 0` unless `replace_all=true`. The trailing-whitespace + CRLF tolerance is the single biggest reduction in 1.5 B edit-failure rate.
+
+#### Shell hardening (`shell.rs`)
+
+1. `shlex::split` the command. Reject if it can't parse.
+2. For each token, reject if it contains any of: `|`, `>`, `>>`, `<`, `&`, `&&`, `||`, `;`, `$(`, `` ` ``.
+3. First token must be in the allowlist (~20 binaries).
+4. For `python`/`python3`/`node`: reject if any subsequent token is `-c` or `-e` (silent allowlist bypass).
+5. `current_dir(cwd)`, `stdin(null)`, `stdout/stderr(piped)`.
+6. Poll `try_wait()` against a deadline; SIGKILL on timeout.
+7. 8 KB output cap (defense-in-depth — `dispatch::hard_truncate` already caps).
+
+### Agent-loop layer (`src/agent/`)
+
+#### Semantic dedup (`guards.rs::SemanticDedup`)
+
+Captures call attempts in a `VecDeque`. Normalizes each call:
+
+1. Trim whitespace on tool name.
+2. Recursively trim string args.
+3. For path-shaped fields (`path`, `file`, `directory`, `dir`): apply `canonicalize_path` (strip `./`, collapse `//`, trim trailing slash).
+4. Sort JSON object keys (`serde_json::Map` preserves insertion order; we sort + rebuild).
+
+Then hash the canonical string. If the last `DEDUP_CONSECUTIVE_LIMIT=3` entries are identical, the guard fires: a system note is injected and the loop breaks for this assistant turn. Test coverage: dedup catches `src/main.rs` / `./src/main.rs` / `src//main.rs` as the same call.
+
+#### Read-before-write (`guards.rs::ReadTracker`)
+
+Records `(canonicalize_path(arg.path))` for every successful `read_file` / `list_dir` / `list_files_recursive` / `grep`. On `write_file` / `edit_file`, checks:
+
+- exact match on the target path, **or**
+- match on any prefix (parent directory was listed), **or**
+- `.` was scanned (the model has surveyed the layout)
+
+If none match, the write is refused with a synthetic tool-failure stub. The model sees the refusal and typically reads the file next.
+
+#### Write-pressure exit (`guards.rs::WritePressure`)
+
+Counts successful `write_file`/`edit_file` calls. After the first write succeeds, every subsequent **zero-byte non-write** tool result (typical pattern: model keeps `read_file`-ing an already-confirmed file) increments a streak. Streak ≥ `WRITE_PRESSURE_ZERO_BYTE_LIMIT=3` breaks the loop — the model has effectively finished but is spinning. Any non-zero result resets the streak.
+
+#### Context elision (`context.rs::elide_old_tool_results`)
+
+Triggered when `estimate_messages_tokens(messages) / 8192 > 0.7`. Algorithm:
+
+1. Identify all `role: tool` messages in order.
+2. If count ≤ `keep_recent=4`, return unchanged.
+3. Otherwise, elide all but the 4 most recent — **except** successful `write_file` / `edit_file` results, which are preserved verbatim regardless of age.
+
+Elision replaces the message content with `[elided: <name> -> N bytes]`. The model still sees the call happened; just not what it returned.
+
+This is the single most important survival primitive at 8192 ctx. Without elision, a 24 KB `read_file` early in the turn occupies ~3 KB of context for the rest of the conversation.
+
+#### Tool-result compressor (`compress.rs::summarize`)
+
+After each tool call, emits a one-line semantic summary as a system note alongside the raw result. Examples:
+
+```
+read_file src/main.rs       → 412 lines, 18234 bytes, defines main
+grep /TODO/ src             → 12 matches in 6 files
+bash `cargo check`          → OK (exit=0 234ms)
+bash `cargo test`           → FAIL (exit=101 1.2s), 37 passed, 1 failed
+list_files_recursive .      → 17 entries, mostly *.rs
+write_file src/repl/mod.rs  → write_file ok: src/repl/mod.rs (4821 bytes)
+edit_file src/agent/mod.rs  → edit_file ok: src/agent/mod.rs (1 replacement)
+```
+
+The model sees both: the raw bytes-capped result *and* this compressed restatement. Tiny models respond disproportionately well to compressed state vs raw token sludge — verified by smoke testing (the model's final answers consistently reference the compressed numbers, not the raw output).
+
+#### Coach (`coach.rs::coach`)
+
+Inspects errors and bash non-zero exits for known patterns; appends a hint after the raw error. Currently 9 patterns:
+
+| Trigger | Hint |
+|---|---|
+| `edit_file: could not find` | "Read the file again — the snippet may differ in whitespace…" |
+| `edit_file: matched N times` | "Make snippet longer/unique, or set replace_all=true." |
+| `write_file: placeholder` | "Replace placeholder markers with the real implementation." |
+| `write_file: accidental wipe` | "Use edit_file targeting the specific text." |
+| any tool, `escapes the working directory` | "Use a relative path — no leading slash, no `../`." |
+| `bash: metacharacter` | "One command at a time, no pipes/redirects/chaining." |
+| `bash: not allowed` | "Binary not in allowlist; use list_dir/read_file/grep." |
+| `bash: timeout` | "Increase timeout_s or narrow the command." |
+| stderr: `unrecognized option`, `command not found`, `No such file`, `Permission denied` | situational hints |
+
+Also injects a synthetic system-role "do not repeat the same call unchanged" note after every error result.
+
+## Configuration
+
+All tunable constants live in `src/config.rs`. Highlights:
+
+```rust
+N_CTX = 8192                            // matches qwen25-1.5b-instruct.yaml
+TEMPERATURE = 0.0   TOP_P = 1.0   REPEAT_PENALTY = 1.1   SEED = 42
+
+MAX_TURNS = 8                           // hard cap before loop breaks
+PRESSURE_THRESHOLD = 0.7                // elision trigger
+KEEP_RECENT_TOOLS = 4                   // preserved through elision
+WRITE_PRESSURE_ZERO_BYTE_LIMIT = 3      // streak before exit
+DEDUP_CONSECUTIVE_LIMIT = 3             // SemanticDedup trip count
+
+TOOL_OUTPUT_HARD_CAP = 8 * 1024         // applies to every tool result
+READ_FILE_DEFAULT_MAX = 24 * 1024
+READ_FILE_HARD_MAX = 64 * 1024
+READ_FILE_REFUSAL_THRESHOLD = 256 * 1024
+LIST_DIR_CAP = 200
+LIST_RECURSIVE_CAP = 500   LIST_RECURSIVE_DEFAULT_DEPTH = 3
+GREP_MAX_MATCHES_DEFAULT = 50
+```
+
+Changing any of these implicitly changes the model's behavior envelope. Don't change without a falsifiable test.
+
+## Non-goals
+
+Decisions deliberately made for v1:
+
+- **No sub-agents.** Multi-turn floor on this model is 0 % (`neo-llm-bench` BFCL multi-turn). Sub-agent orchestration burns context without buying capability.
+- **No plan mode.** Same reason. Single-action bias is doing the work plan mode would do at a higher quality.
+- **No MCP.** Adds tool surface; on a 1.5 B model every new tool increases routing entropy on the irrelevance axis.
+- **No tree-sitter symbols / BM25 search.** `luxe` has these and uses them well at 35 B. At 1.5 B, the system prompt would have to describe them, eating ctx and increasing routing entropy.
+- **No `glob` tool.** `list_files_recursive` + `grep` cover the use cases with less routing confusion (`glob` vs `list_files_recursive` vs `list_dir` is a coin flip on this model).
+- **No multi-file refactors.** Read-before-write enforcement makes them possible in principle but the model's state-tracking limit hits before the diff converges.
+- **No streaming output.** Nice but not load-bearing. The render layer is structured around final messages, not chunks.
+- **No async / tokio.** Single-threaded REPL. `ureq` is the HTTP client.
+
+## Build + test
+
+```bash
+cargo build               # debug
+cargo build --release     # ~2.6 MB stripped
+cargo test                # 81 unit tests, no model required
+```
+
+End-to-end smoke (requires `llama-server` running on port 8080):
+
+```bash
+LLAMA_SERVER_URL=http://127.0.0.1:8080 \
+  printf 'List the files in src\n/quit\n' | ./target/release/micro-mind
+```
+
+See `README.md §Quick start` for the full smoke matrix.
