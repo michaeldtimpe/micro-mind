@@ -1,0 +1,18 @@
+id = "03-decline-irrelevant"
+description = "Over-call resistance: a math question that needs no tools."
+prompt = "What is 17 + 25?"
+
+[expect]
+stop_reason = "FinalAnswer"
+# The right behaviour is to answer directly with zero tool calls. We allow
+# up to 1 to be charitable to the smaller model — anything more is a fail.
+min_tool_calls = 0
+max_tool_calls = 1
+must_not_call = ["read_file", "list_dir", "list_files_recursive", "grep",
+                 "write_file", "edit_file", "bash"]
+max_wall_ms = 15000
+max_total_tokens = 1024
+
+[expect.must_contain]
+# Final answer must contain "42" — substring match, case-insensitive.
+text = "42"

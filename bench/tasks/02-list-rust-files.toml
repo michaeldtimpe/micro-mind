@@ -1,0 +1,12 @@
+id = "02-list-rust-files"
+description = "Project-map orientation via list_files_recursive."
+prompt = "How many Rust source files are in src/? Use list_files_recursive."
+
+[expect]
+stop_reason = "FinalAnswer"
+min_tool_calls = 1
+max_tool_calls = 3
+must_call_any_of = ["list_files_recursive"]
+must_not_call = ["write_file", "edit_file"]
+max_wall_ms = 30000
+max_total_tokens = 3072

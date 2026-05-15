@@ -1,0 +1,27 @@
+# Bench fixture format — see bench/README.md for the schema reference.
+#
+# A "task" is one user prompt plus a set of expectations that downstream
+# tooling can validate against the JSONL trace produced by a recorded run.
+
+id = "01-read-readme"
+description = "Single-hop read of the project README."
+prompt = "Read README.md and tell me in one sentence what micro-mind is."
+
+[expect]
+# Must terminate via a normal final answer (not a guard or error).
+stop_reason = "FinalAnswer"
+
+# At least one tool call total. Exact tool list is not pinned — small models
+# sometimes pick list_files_recursive first; that's fine.
+min_tool_calls = 1
+max_tool_calls = 4
+
+# At least one call to one of these tools (any-of).
+must_call_any_of = ["read_file", "grep"]
+
+# These would indicate a routing failure (write before read, shell escape).
+must_not_call = ["write_file", "edit_file"]
+
+# Latency / cost budgets. Generous; tightened later as we collect baselines.
+max_wall_ms = 60000
+max_total_tokens = 4096
