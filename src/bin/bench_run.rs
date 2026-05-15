@@ -157,9 +157,8 @@ fn main() -> Result<()> {
             let (effective_cwd, scratch_dir): (PathBuf, Option<PathBuf>) = if fx.cwd_isolated {
                 let s = out_dir.join(format!(".scratch-{}-rep{rep}", fx.id));
                 let _ = std::fs::remove_dir_all(&s);
-                std::fs::create_dir_all(&s).with_context(|| {
-                    format!("create scratch dir {}", s.display())
-                })?;
+                std::fs::create_dir_all(&s)
+                    .with_context(|| format!("create scratch dir {}", s.display()))?;
                 (s.clone(), Some(s))
             } else {
                 (cwd.clone(), None)

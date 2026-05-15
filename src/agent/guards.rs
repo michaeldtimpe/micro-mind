@@ -438,12 +438,7 @@ mod tests {
     #[test]
     fn cold_read_allows_dot_path() {
         // Project survey is always fine.
-        let r = first_turn_cold_read_check(
-            0,
-            "look around",
-            "read_file",
-            &json!({"path": "."}),
-        );
+        let r = first_turn_cold_read_check(0, "look around", "read_file", &json!({"path": "."}));
         assert!(r.is_none());
     }
 
