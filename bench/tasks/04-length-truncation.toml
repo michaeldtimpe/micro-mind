@@ -1,0 +1,38 @@
+# Bench fixture format — see bench/README.md for the schema reference.
+#
+# Verifies the harness handles `finish_reason=length` cleanly:
+#   - Loop terminates with StopReason::Length (not TurnCap, not Error)
+#   - No tool dispatch is attempted on a truncated assistant message
+#   - The truncation note is pushed onto the conversation for the next turn
+#     (validated indirectly via the guard event of kind=length)
+#
+# Trigger: a prompt that deterministically generates >max_tokens output.
+# Counting from 1 to 2000 with one number per line emits ~6000 tokens of
+# completion, blasting past max_tokens=2048.
+
+id = "04-length-truncation"
+description = "Length-truncation exit fires deterministically on a verbose prompt."
+prompt = "Print 'I will count from 1 to 2000 with each integer on its own line.' Then on a new line print 1, then 2, then 3, then 4, then 5, and continue all the way through 2000. Print every single integer with no skips. Do not summarize or abbreviate."
+
+[expect]
+stop_reason = "Length"
+# Zero tool calls expected — the model is generating prose, not invoking
+# functions. The truncated assistant message should not have been
+# dispatched against (would be a bug if it were).
+min_tool_calls = 0
+max_tool_calls = 0
+must_not_call = [
+    "read_file",
+    "list_dir",
+    "list_files_recursive",
+    "grep",
+    "write_file",
+    "edit_file",
+    "bash",
+]
+# Generous wall budget — generating 2048 completion tokens at Q8_0 takes
+# ~10-15 seconds on the dev rig.
+max_wall_ms = 60000
+# Completion is exactly max_tokens=2048; total includes the small prompt
+# (~700 tokens of system + tool defs). 3500 gives generous headroom.
+max_total_tokens = 3500

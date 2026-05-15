@@ -1,0 +1,5 @@
+{"payload":{"cwd":"/Users/mtimpe/Downloads/micro-mind","event":"session_start","model":"qwen25-1.5b-instruct","schema_v":2,"tools":["read_file","list_dir","list_files_recursive","grep","write_file","edit_file","bash"]},"ts_ms":1778873515290}
+{"payload":{"event":"chat_request","n_messages":2,"n_tools":7,"turn":0},"ts_ms":1778873515290}
+{"payload":{"completion_tokens":2048,"error":null,"event":"chat_response","finish_reason":"length","native_tool_calls":1,"prompt_tokens":1133,"recovered_tool_calls":0,"total_tokens":3181,"turn":0,"wall_ms":11688},"ts_ms":1778873526979}
+{"payload":{"detail":null,"event":"guard","kind":"length","turn":0},"ts_ms":1778873526979}
+{"payload":{"event":"stop","reason":"Length","turn":0,"wall_ms":11688},"ts_ms":1778873526979}

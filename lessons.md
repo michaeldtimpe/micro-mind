@@ -115,3 +115,58 @@ A running log of mistakes, surprises, and hard-won insights from building micro-
 **Affected files**: (process lesson). The fix from this session is captured separately in the `safe_path` leading-slash accommodation lesson above.
 
 ---
+
+### [2026-05-15] Schema-v2 traces let `bench-replay` validate `must_contain` offline
+
+**What happened**: First version of the JSONL schema (v1) carried no copy of the final assistant message — the design rationale was "keep traces small, don't leak verbatim model output." The consequence surfaced immediately: `bench-replay` (the CI-friendly trace validator) could check tool counts, latency, and stop reasons, but couldn't validate `expect.must_contain`, because that predicate requires the actual answer text. Only `bench-run` (which captures the subprocess's stdout) could fill it. CI replays of committed baselines were silently weaker than the original `bench-run` they came from.
+
+**Root cause**: We optimized the v1 schema for one consumer (live `bench-run`) and assumed `must_contain` would be rare. As soon as we wrote a sample fixture exercising it, the asymmetry became visible — the same fixture would pass under `bench-run` and fail under `bench-replay`, with no useful failure signal.
+
+**Fix / takeaway**: Bumped to schema v2: `Stop` event gained `final_answer: Option<String>`, `SessionStart` gained `schema_v: Option<u32>`. Both `#[serde(default, skip_serializing_if = ...)]`, so v1 traces parse cleanly and v2 emitters writing `None` produce no extra bytes. The agent loop now tracks the last non-empty assistant content and threads it through both `Stop` emission sites. `bench::summary::summarize_trace` prefers the trace value when present, falling back to `bench-run`'s stdout capture for pre-v2 traces. Principle: **a trace schema designed for one consumer is brittle; verify CI replay reproduces `bench-run`'s pass/fail on every predicate**.
+
+**Affected files**: `src/obs/recorder.rs` (Event variants), `src/obs/mod.rs` (re-export `SCHEMA_V`), `src/agent/mod.rs` (final_answer tracking), `src/bench/summary.rs` (trace-wins priority), `src/main.rs` (emit schema_v on SessionStart), `obs/schema.md` (docs + version policy), `bench/samples/*` (round-trip demo).
+
+---
+
+### [2026-05-15] `finish_reason="length"` needs its own stop reason, not just `TurnCap`
+
+**What happened**: An early version of the agent loop treated any non-FinalAnswer break as either `TurnCap` (8-turn loop limit) or `Error`. When llama-server reported `finish_reason="length"` (the model's reply was truncated by `max_tokens`), the loop would still dispatch any partial tool_calls in the truncated message — those calls had unbalanced JSON about half the time, and the resulting tool errors then triggered the dedup or coach paths in confusing ways. The whole class of failures looked like "model misbehaved" but was actually "harness fed the model a truncated message back to itself".
+
+**Root cause**: The chat response carries `finish_reason` for a reason — `"stop"` (natural end), `"tool_calls"` (server stopped because tool_calls completed), and `"length"` (max_tokens hit) are three different things, and the harness was treating them all as "continue if there are tool_calls, otherwise FinalAnswer." Length is fundamentally different: the message is structurally incomplete. Dispatching against it is undefined behavior.
+
+**Fix / takeaway**: Added `StopReason::Length`. When `finish_reason="length"`, the loop emits a `guard` event of `kind=length`, pushes a "be more concise" system note onto the conversation (persists into the next user turn), and breaks without dispatching any tool_calls in the truncated message. New fixture `04-length-truncation.toml` exercises it deterministically (a verbose "count from 1 to 2000" prompt produces exactly 2048 completion tokens). Principle: **server-side metadata fields like `finish_reason` exist because the states they distinguish are not interchangeable. Treat each one explicitly.**
+
+**Affected files**: `src/agent/mod.rs` (StopReason::Length variant, length-detection in run_turn), `src/agent/guards.rs` (`length_truncation_note`), `bench/tasks/04-length-truncation.toml` (deterministic regression).
+
+---
+
+### [2026-05-15] Calibrate fixture predicates against measured floors, not aspirations
+
+**What happened**: First baseline run (`bench/baselines/2026-05-15-main/`) had `01-read-readme` failing 3/3 reps at `total_tokens=4714 > max=4096`. Tried tightening the system prompt to reduce verbosity; that broke the task entirely (the model started skipping the file read and hallucinating from priors). Tried strengthening the anti-over-call rule; that made `03-decline-irrelevant` produce "32" for 17+25 instead of "42" (the model loses arithmetic accuracy without the side-trip chain). Reverted both changes.
+
+**Root cause**: The 4096 cap was set speculatively when the fixture was written, before any measured data existed. The actual architectural floor for "read a 10 KB README and summarize it" at `n_ctx=8192` is:
+- ~1100 tokens for turn 0 prompt (system + 7 tool defs + user query)
+- ~30 tokens for the assistant's read_file tool_call
+- ~2500 tokens for the tool result echoed into turn 1's prompt (the README body)
+- ~120 tokens for the final summary
+- = ~4400 total. The 4096 cap was below the floor.
+
+The prompt-tinkering attempts also surfaced a second-order failure: at temp=0.0, the model's deterministic chain-of-reasoning sometimes routes through "spurious" intermediate steps that contribute to the right answer. Removing those steps (via prompt rules) changes the deterministic chain — and not always for the better.
+
+**Fix / takeaway**: Calibrated `01-read-readme.toml`'s `max_total_tokens` from 4096 → 5000 (≈300 tokens of headroom over the measured 4714). Left the prompt alone. The comment in the fixture documents the architectural floor for the next person who looks at it. Principle: **a fixture predicate that's below the measured architectural floor isn't ambitious — it's miscalibrated. Loosening it to the real floor + a regression headroom is calibration, not capitulation. The genuine aspirations live in fixtures where the headroom is being burned by behaviours we *could* improve (e.g. `03-decline-irrelevant`'s 2344 tokens at 1024 cap, where the model is genuinely doing spurious work).**
+
+**Affected files**: `bench/tasks/01-read-readme.toml` (cap calibration + comment), `bench/baselines/2026-05-15-main/` (preserved as historical), `bench/baselines/2026-05-15-with-length/` (fresh baseline at 9/12 pass).
+
+---
+
+### [2026-05-15] `bench-run` needs SIGINT propagation or you orphan a llama-server every cancelled run
+
+**What happened**: First version of `bench-run` polled `child.try_wait()` in a 200 ms loop and used `child.kill()` only on timeout. Ctrl-C on the parent would terminate `bench-run` immediately, but the spawned `micro-mind` subprocess kept running — and *its* spawned `llama-server` (1.6 GB resident, GPU-attached) kept running on port 8080. Subsequent bench attempts then failed to spawn their own server because 8080 was taken. The orphan only died when manually `pkill`-ed.
+
+**Root cause**: Two issues compounded. (1) No SIGINT handler in `bench-run` — the signal killed the parent without cleanup. (2) Even if we'd added a handler, `child.kill()` only sends SIGKILL to the immediate child (`micro-mind`); it doesn't reach the grandchild (`llama-server`). On Unix, the grandchild needs to be in `micro-mind`'s process group for a single signal to reap both.
+
+**Fix / takeaway**: Three changes in `src/bin/bench_run.rs`: install a SIGINT handler via `nix::sys::signal::sigaction` that flips a static `AtomicBool`; spawn children with `CommandExt::process_group(0)` so they form their own group; in the polling loop, on either timeout or SIGINT, send `SIGTERM` (then `SIGKILL` after a 500 ms grace) to the whole process group via `nix::sys::signal::killpg`. The labeled `'outer` break in the fixture loop stops after the current task on shutdown. Principle: **when spawning subprocesses that themselves spawn children, isolate them in a process group at spawn time. A `kill` on the parent leaks the grandchildren; a `killpg` on the group reaps the tree.**
+
+**Affected files**: `src/bin/bench_run.rs` (sigint_handler, install_sigint_handler, SHUTDOWN flag, process_group spawn, killpg on timeout/SIGINT).
+
+---

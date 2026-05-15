@@ -71,19 +71,25 @@ push user message
 loop (max MAX_TURNS=8 turns):
     if pressure > 0.7
         → elide_old_tool_results (write-summaries preserved)
+    record ChatRequest event
     response = client.chat(messages, tools)
-    push assistant message
+    record ChatResponse event (finish_reason, usage, tool_call counts)
+    push assistant message; remember its content for final_answer
+    if response.finish_reason == "length"
+        → record Guard{length}, push concision note, stop=Length, break
     if response.tool_calls.is_empty()
-        → render final answer, break
+        → render final answer, stop=FinalAnswer, break
     for each tool_call:
         if SemanticDedup catches a 3-in-a-row loop
-            → inject system note, break
+            → inject system note, stop=Dedup, break
         if write_file/edit_file && target unread in this turn
             → return tool-failure stub ("read it first"), continue
+        record ToolCall event
         result = dispatch(name, args, …)
             (8 KB hard cap applied here)
         coached_body = coach::coach(&result)
         push tool-result message with coached_body
+        record ToolResult event
         if let Some(summary) = compress::summarize(&result)
             → push as system note
         if result.error
@@ -91,8 +97,11 @@ loop (max MAX_TURNS=8 turns):
         if result.is_ok()
             → ReadTracker.record_read(name, args)
         if WritePressure trips (3 zero-byte non-writes after a write)
-            → break early
+            → stop=WritePressure, break early
+record Stop event (turn, reason, wall_ms, final_answer)
 ```
+
+Stop reasons: `FinalAnswer`, `TurnCap`, `WritePressure`, `Dedup`, `Length`, `Error(String)`. All five appear as fixture-predicate strings in `bench/tasks/*.toml` and as `stop.reason` in JSONL traces.
 
 Two response shapes are handled:
 
@@ -103,7 +112,7 @@ Schema validation runs on every tool call before dispatch. A failed validation s
 
 ## Failure-mode coverage
 
-This single agent inherits all 17 named mitigations described in [`ARCHITECTURE.md §Layered survival primitives`](ARCHITECTURE.md). The agent has no concept of these layers — it just sees: a strict prompt, tools that reject bad input, an early stop if it loops, and synthetic system notes when something goes wrong. The agent's job is just to call the right tool with the right args.
+This single agent inherits all 18 named mitigations described in [`ARCHITECTURE.md §Layered survival primitives`](ARCHITECTURE.md). The agent has no concept of these layers — it just sees: a strict prompt, tools that reject bad input, an early stop if it loops or gets truncated, and synthetic system notes when something goes wrong. The agent's job is just to call the right tool with the right args.
 
 ## Why not multiple agents?
 

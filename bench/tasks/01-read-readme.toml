@@ -22,6 +22,14 @@ must_call_any_of = ["read_file", "grep"]
 # These would indicate a routing failure (write before read, shell escape).
 must_not_call = ["write_file", "edit_file"]
 
-# Latency / cost budgets. Generous; tightened later as we collect baselines.
+# Latency / cost budgets.
 max_wall_ms = 60000
-max_total_tokens = 4096
+# Architectural floor for this task is ~4400 tokens at temp=0:
+#   - turn 0 prompt (system + 7 tool defs + user query): ~1100
+#   - assistant tool_call: ~30
+#   - tool result with README body echoed (~10 KB README ≈ 2500 tokens): ~2500
+#   - turn 1 assistant final summary: ~120
+# 5000 gives ~300 tokens of headroom while still catching real regressions
+# (e.g. the model re-reading the same file or generating a verbose answer).
+# Measured 2026-05-15-main: 4714 across all 3 reps (deterministic at temp=0).
+max_total_tokens = 5000

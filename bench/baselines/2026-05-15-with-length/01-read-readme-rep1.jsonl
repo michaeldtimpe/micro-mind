@@ -1,0 +1,8 @@
+{"payload":{"cwd":"/Users/mtimpe/Downloads/micro-mind","event":"session_start","model":"qwen25-1.5b-instruct","schema_v":2,"tools":["read_file","list_dir","list_files_recursive","grep","write_file","edit_file","bash"]},"ts_ms":1778873485717}
+{"payload":{"event":"chat_request","n_messages":2,"n_tools":7,"turn":0},"ts_ms":1778873485717}
+{"payload":{"completion_tokens":33,"error":null,"event":"chat_response","finish_reason":"tool_calls","native_tool_calls":1,"prompt_tokens":1074,"recovered_tool_calls":0,"total_tokens":1107,"turn":0,"wall_ms":224},"ts_ms":1778873485942}
+{"payload":{"arguments":{"path":"/Users/mtimpe/Downloads/micro-mind/README.md"},"event":"tool_call","name":"read_file","tool_call_id":"qyM3v5MBK3bN6LXDxCgxZd2rfXzBS9qZ","turn":0},"ts_ms":1778873485942}
+{"payload":{"bytes_out":8262,"cached":false,"error":null,"event":"tool_result","name":"read_file","ok":true,"tool_call_id":"qyM3v5MBK3bN6LXDxCgxZd2rfXzBS9qZ","turn":0,"wall_ms":0},"ts_ms":1778873485942}
+{"payload":{"event":"chat_request","n_messages":5,"n_tools":7,"turn":1},"ts_ms":1778873485942}
+{"payload":{"completion_tokens":65,"error":null,"event":"chat_response","finish_reason":"stop","native_tool_calls":0,"prompt_tokens":3494,"recovered_tool_calls":0,"total_tokens":3559,"turn":1,"wall_ms":714},"ts_ms":1778873486656}
+{"payload":{"event":"stop","final_answer":"micro-mind is a Claude Code-style interactive development REPL powered by `qwen25-1.5b-instruct` via `llama-server`. It offers a single capable 1.5 B model for minimum-RAM operation and supports 7 survival primitives to ensure the harness remains smart against failure modes.","reason":"FinalAnswer","turn":1,"wall_ms":938},"ts_ms":1778873486656}

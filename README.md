@@ -2,7 +2,7 @@
 
 A Claude Code-style interactive development REPL powered by `qwen25-1.5b-instruct` via `llama-server`. Sister project to [`michaeldtimpe/luxe`](https://github.com/michaeldtimpe/luxe) (MLX-only, 35 B MoE) and [`michaeldtimpe/neo-llm-bench`](https://github.com/michaeldtimpe/neo-llm-bench) (the bake-off that picked this model).
 
-> **Status:** v1 + observability. End-to-end smoke 5/5 across the canonical workflows (list, read, grep, decline-irrelevance, decline-math). 106/106 unit tests passing. Release binary 2.6 MB stripped. Schema v2 JSONL traces, four bench binaries, first committed baseline (`bench/baselines/2026-05-15-main/`: 3/9 reps pass — see CLAUDE.md for what the failures tell you). See `RESUME.md` (forthcoming) for active state.
+> **Status:** v1 + observability. End-to-end smoke 5/5 across the canonical workflows (list, read, grep, decline-irrelevance, decline-math). 106/106 unit tests passing. Release binary 2.6 MB stripped. Schema v2 JSONL traces with `final_answer` for offline replay validation. Four bench binaries, four committed fixtures (`bench/tasks/*.toml`), two baselines: `2026-05-15-main` (3 tasks × 3 reps, 6/9 pass after fixture calibration) and `2026-05-15-with-length` (4 tasks × 3 reps, 9/12 pass — `03-decline-irrelevant` is an aspirational failure tracked deliberately). See `lessons.md` for the calibration story and the Length-stop design notes.
 
 ## Why this exists
 

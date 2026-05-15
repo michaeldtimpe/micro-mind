@@ -6,12 +6,13 @@ A single Rust binary that simulates Claude Code's core development-assistant wor
 
 ```
 src/
-├─ main.rs                clap CLI, server bootstrap, build_tool_surface, REPL
+├─ main.rs                clap CLI, server bootstrap, build_tool_surface, REPL, --record
+├─ lib.rs                 library facet — re-exports obs + bench for the bench-* bins
 ├─ config.rs              all tunable constants (ctx, sampling, caps, thresholds)
 ├─ server.rs              llama-server lifecycle (singleton, attach-or-spawn)
 │
 ├─ llm/
-│  ├─ types.rs            ChatMessage, ToolCall, ChatRequest, ChatResponse
+│  ├─ types.rs            ChatMessage, ToolCall, ChatRequest, ChatResponse, Usage
 │  ├─ client.rs           ureq blocking client + native tool_calls + text recovery
 │  └─ prompt.rs           system prompt (BFCL v2 + single-action + strict-output)
 │
@@ -24,18 +25,34 @@ src/
 │  └─ shell.rs            bash with shlex + metacharacter reject + allowlist
 │
 ├─ agent/
-│  ├─ mod.rs              Session, run_turn — the core loop
+│  ├─ mod.rs              Session, run_turn — the core loop, StopReason, recorder threading
 │  ├─ context.rs          estimate_tokens, pressure, write-aware elide
 │  ├─ compress.rs         per-tool semantic summarizer (read_file, grep, bash, …)
 │  ├─ coach.rs            harness-level error coaching + failure-memory note
-│  └─ guards.rs           SemanticDedup, ReadTracker, WritePressure
+│  └─ guards.rs           SemanticDedup, ReadTracker, WritePressure, length_truncation_note
 │
-└─ repl/
-   ├─ mod.rs              rustyline prompt + slash-command dispatch
-   └─ render.rs           compact tool-call / tool-result rendering
+├─ repl/
+│  ├─ mod.rs              rustyline prompt + slash-command dispatch
+│  └─ render.rs           compact tool-call / tool-result rendering
+│
+├─ obs/
+│  ├─ mod.rs              re-exports + SCHEMA_V constant
+│  └─ recorder.rs         Event variants, JsonlRecorder, NoopRecorder, Recorder trait
+│
+├─ bench/
+│  ├─ mod.rs              re-exports
+│  ├─ fixture.rs          Fixture / TaskExpect TOML schema + discovery
+│  ├─ trace.rs            JSONL trace parser (additive-schema tolerant)
+│  └─ summary.rs          summarize_trace, check_expectations
+│
+└─ bin/
+   ├─ bench_run.rs        spawn micro-mind per fixture, capture traces, SIGINT-safe
+   ├─ bench_replay.rs     offline trace validator (CI gate)
+   ├─ bench_summarize.rs  text / markdown table over a directory of traces
+   └─ bench_compare.rs    baseline vs candidate summary.json diff
 ```
 
-Tests live alongside each module (`#[cfg(test)] mod tests`). 81 unit tests as of v1.
+Tests live alongside each module (`#[cfg(test)] mod tests`). 106 unit tests as of the obs/bench drop (16 lib + 88 main bin + 2 bench-run).
 
 ## Runtime flow
 
@@ -77,21 +94,32 @@ The agent loop (`src/agent/mod.rs::run_turn`):
 push user message
 loop (max MAX_TURNS=8):
     if pressure > 0.7 → elide_old_tool_results (write-summaries preserved)
+    record ChatRequest event
     response = client.chat(messages, tools)
-    push assistant message
-    if response.tool_calls.is_empty() → render final answer, break
+    record ChatResponse event (finish_reason, usage, native + recovered tool_calls)
+    push assistant message; remember its content as last_assistant_content
+    if response.finish_reason == "length" → record Guard{length}, push concision note,
+                                            set last_stop=Length, break (no dispatch)
+    if response.tool_calls.is_empty() → render final answer, set last_stop=FinalAnswer, break
 
     for each tool_call:
-        if SemanticDedup.record_and_check(name, args) → inject system note, break
-        if write_file/edit_file && !ReadTracker.has_seen(path) → tool-failure stub, continue
+        if SemanticDedup.record_and_check(name, args) → record Guard{dedup}, inject system
+                                                       note, set last_stop=Dedup, break
+        if write_file/edit_file && !ReadTracker.has_seen(path) → record Guard{read_before_write},
+                                                                  push refusal stub, continue
+        record ToolCall event
         result = dispatch(name, args, …)              # tool layer enforces 8 KB cap
         coached = coach::coach(&result)               # prepend hint if error matches pattern
-        push tool result message
+        push tool result message; record ToolResult event
         if let Some(summary) = compress::summarize(&result) → push as system note
         if result.error → push failure-memory system note
         if result.is_ok() → ReadTracker.record_read(name, args)
-        if WritePressure.observe(name, ok, bytes) → break early (write-pressure exit)
+        if WritePressure.observe(name, ok, bytes) → record Guard{write_pressure}, Stop, return
+
+record Stop event (turn, reason, wall_ms, final_answer=last_assistant_content)
 ```
+
+Stop reasons: `FinalAnswer`, `TurnCap`, `WritePressure`, `Dedup`, `Length`, `Error(String)`.
 
 ## Layered survival primitives
 
@@ -246,6 +274,29 @@ Inspects errors and bash non-zero exits for known patterns; appends a hint after
 
 Also injects a synthetic system-role "do not repeat the same call unchanged" note after every error result.
 
+#### Length-truncation exit (`agent/mod.rs` + `guards.rs::length_truncation_note`)
+
+When llama-server reports `finish_reason="length"`, the assistant message is structurally incomplete (any tool_calls in it may have unbalanced JSON). The loop:
+
+1. Records a `guard` event of `kind=length`.
+2. Pushes `guards::length_truncation_note()` as a system message — persists into the next user turn so the model sees "your previous response was cut off, be more concise".
+3. Sets `last_stop=StopReason::Length` and breaks **without dispatching any tool_calls**.
+
+The truncated message itself is still pushed into history (so the user sees what got generated), but treated as a dead end for control flow.
+
+### Observability layer (`src/obs/`)
+
+The agent loop emits JSONL events when `--record <dir>` is passed:
+
+- `session_start` — once at REPL startup. Carries `schema_v` (currently 2).
+- `chat_request` — pre-POST. `turn`, `n_messages`, `n_tools`.
+- `chat_response` — post-decode. `finish_reason`, `wall_ms`, native + recovered tool_call counts, OpenAI-style `usage` (prompt/completion/total tokens).
+- `tool_call` / `tool_result` — every dispatch, before and after. `wall_ms`, `bytes_out`, `cached`, `error`.
+- `guard` — every guard fire. `kind` ∈ {`dedup`, `read_before_write`, `write_pressure`, `length`, `turn_cap`}.
+- `stop` — end of `run_turn`. Carries `final_answer` (v2) — the last non-empty assistant content, used by `bench-replay` to validate `expect.must_contain` offline.
+
+Full schema in `obs/schema.md`. The recorder is a trait; the default is `NoopRecorder` (zero-cost when recording is disabled). `JsonlRecorder` is best-effort — a failed write is logged once to stderr and subsequent events are dropped, never breaking the run.
+
 ## Configuration
 
 All tunable constants live in `src/config.rs`. Highlights:
@@ -288,8 +339,10 @@ Decisions deliberately made for v1:
 
 ```bash
 cargo build               # debug
-cargo build --release     # ~2.6 MB stripped
-cargo test                # 81 unit tests, no model required
+cargo build --release     # ~2.6 MB stripped (micro-mind), bench-* bins also produced
+cargo test                # 106 unit tests, no model required
+cargo clippy -- -D warnings   # gating, zero-warning floor
+cargo fmt --all --check       # gating
 ```
 
 End-to-end smoke (requires `llama-server` running on port 8080):
@@ -299,4 +352,17 @@ LLAMA_SERVER_URL=http://127.0.0.1:8080 \
   printf 'List the files in src\n/quit\n' | ./target/release/micro-mind
 ```
 
-See `README.md §Quick start` for the full smoke matrix.
+Bench loop (also requires `llama-server`):
+
+```bash
+LLAMA_SERVER_URL=http://127.0.0.1:8080 \
+  ./target/release/bench-run --bin ./target/release/micro-mind --reps 3
+```
+
+CI is hermetic: no llama-server, no GPU. The chain there is `cargo test` →
+`cargo fmt --check` → `cargo clippy -D warnings` → schema validate the sample
+trace → replay sample trace against sample fixture → summarize sample trace →
+advisory batch replay of every committed `bench/baselines/*/` against the
+current fixture set.
+
+See `README.md §Quick start` and `bench/README.md` for the full matrix.
