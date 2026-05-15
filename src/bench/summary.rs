@@ -162,6 +162,19 @@ pub fn check_expectations(fx: &Fixture, s: &Summary) -> Vec<String> {
             ));
         }
     }
+    for required in &fx.expect.must_call_all_of {
+        if !s.tool_calls_by_name.contains_key(required) {
+            fails.push(format!(
+                "must_call_all_of: missing {} (saw: {})",
+                required,
+                s.tool_calls_by_name
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ));
+        }
+    }
     for bad in &fx.expect.must_not_call {
         if s.tool_calls_by_name.contains_key(bad) {
             fails.push(format!("forbidden tool call: {bad}"));
@@ -296,6 +309,37 @@ mod tests {
         let fails = check_expectations(&fx, &s);
         assert_eq!(fails.len(), 1);
         assert!(fails[0].contains("min=2"));
+    }
+
+    #[test]
+    fn must_call_all_of_passes_when_all_present() {
+        let fx_src = r#"
+            id = "t"
+            prompt = "p"
+            [expect]
+            must_call_all_of = ["grep", "read_file"]
+        "#;
+        let fx = Fixture::from_toml_str(fx_src).unwrap();
+        let mut s = Summary::default();
+        s.tool_calls_by_name.insert("grep".into(), 1);
+        s.tool_calls_by_name.insert("read_file".into(), 1);
+        assert!(check_expectations(&fx, &s).is_empty());
+    }
+
+    #[test]
+    fn must_call_all_of_fails_when_one_missing() {
+        let fx_src = r#"
+            id = "t"
+            prompt = "p"
+            [expect]
+            must_call_all_of = ["grep", "read_file"]
+        "#;
+        let fx = Fixture::from_toml_str(fx_src).unwrap();
+        let mut s = Summary::default();
+        s.tool_calls_by_name.insert("grep".into(), 1);
+        let fails = check_expectations(&fx, &s);
+        assert_eq!(fails.len(), 1);
+        assert!(fails[0].contains("read_file"));
     }
 
     #[test]

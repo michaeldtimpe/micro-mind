@@ -52,7 +52,7 @@ src/
    └─ bench_compare.rs    baseline vs candidate summary.json diff
 ```
 
-Tests live alongside each module (`#[cfg(test)] mod tests`). 112 unit tests as of the cold-read-guard drop (16 lib + 94 main bin + 2 bench-run).
+Tests live alongside each module (`#[cfg(test)] mod tests`). 114 unit tests as of the must_call_all_of drop (18 lib + 94 main bin + 2 bench-run).
 
 ## Runtime flow
 
@@ -356,7 +356,7 @@ Decisions deliberately made for v1:
 ```bash
 cargo build               # debug
 cargo build --release     # ~2.6 MB stripped (micro-mind), bench-* bins also produced
-cargo test                # 112 unit tests, no model required
+cargo test                # 114 unit tests, no model required
 cargo clippy -- -D warnings   # gating, zero-warning floor
 cargo fmt --all --check       # gating
 ```

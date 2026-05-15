@@ -1,0 +1,46 @@
+# Bench fixture format — see bench/README.md for the schema reference.
+#
+# Exercises grep against the real project tree. The pattern `safe_path`
+# hits 15+ lines across ~6 files, which:
+#   - Stresses the tool-result compressor's grep summary code path
+#     (compress.rs::summarize_grep counts files/matches).
+#   - Validates the 8 KB hard truncate doesn't trip on a realistic
+#     many-match result.
+#   - Tests that the model emits a sensible final answer over a
+#     non-trivial tool result body.
+#
+# Single-hop only. Earlier attempts at chained "grep then read_file" or
+# "grep then identify the declaring file" both hit the 1.5 B model's
+# `neo-llm-bench`-measured 0% multi-turn floor — the model either
+# hallucinated the second-step result, fired parallel calls with a
+# guessed path (caught by the cold-read guard), or picked a usage line
+# as the "declaration." The downscoped single-hop predicate below is
+# what this model size can sustain deterministically at temp=0.
+
+id = "07-grep-many-matches"
+description = "Single-hop grep across the project; verify the tool-result compressor handles a many-match body."
+prompt = "Use grep with pattern safe_path and path src to find every line in the src/ directory that mentions safe_path. Briefly summarize what you found."
+
+[expect]
+stop_reason = "FinalAnswer"
+
+# At least one grep call; cap at 2 to allow a refined re-grep.
+min_tool_calls = 1
+max_tool_calls = 2
+
+# Must use grep.
+must_call_any_of = ["grep"]
+
+# Read-only test; mutating tools and shell are out of scope.
+must_not_call = ["write_file", "edit_file", "bash"]
+
+max_wall_ms = 30000
+# Architectural floor at temp=0, measured 2026-05-15: 2686 across 3 reps.
+# grep result is ~1.1 KB (4-5 matching files). Model produces a 4-bullet
+# summary mentioning each file. Cap at 3500 for ~800 tokens of headroom.
+max_total_tokens = 3500
+
+# Final answer must mention the search term as proof the model
+# consumed the grep result rather than hallucinating.
+[expect.must_contain]
+text = "safe_path"

@@ -1,7 +1,7 @@
-{"payload":{"cwd":"/Users/mtimpe/Downloads/micro-mind","event":"session_start","model":"qwen25-1.5b-instruct","schema_v":2,"tools":["read_file","list_dir","list_files_recursive","grep","write_file","edit_file","bash"]},"ts_ms":1778875377062}
-{"payload":{"event":"chat_request","n_messages":2,"n_tools":7,"turn":0},"ts_ms":1778875377062}
-{"payload":{"completion_tokens":21,"error":null,"event":"chat_response","finish_reason":"tool_calls","native_tool_calls":1,"prompt_tokens":1069,"recovered_tool_calls":0,"total_tokens":1090,"turn":0,"wall_ms":170},"ts_ms":1778875377233}
-{"payload":{"detail":"/dev/null","event":"guard","kind":"cold_read","turn":0},"ts_ms":1778875377233}
-{"payload":{"event":"chat_request","n_messages":4,"n_tools":7,"turn":1},"ts_ms":1778875377233}
-{"payload":{"completion_tokens":12,"error":null,"event":"chat_response","finish_reason":"stop","native_tool_calls":0,"prompt_tokens":1145,"recovered_tool_calls":0,"total_tokens":1157,"turn":1,"wall_ms":93},"ts_ms":1778875377326}
-{"payload":{"event":"stop","final_answer":"17 + 25 is 42.","reason":"FinalAnswer","turn":1,"wall_ms":264},"ts_ms":1778875377326}
+{"payload":{"cwd":"/Users/mtimpe/Downloads/micro-mind","event":"session_start","model":"qwen25-1.5b-instruct","schema_v":2,"tools":["read_file","list_dir","list_files_recursive","grep","write_file","edit_file","bash"]},"ts_ms":1778888846315}
+{"payload":{"event":"chat_request","n_messages":2,"n_tools":7,"turn":0},"ts_ms":1778888846315}
+{"payload":{"completion_tokens":21,"error":null,"event":"chat_response","finish_reason":"tool_calls","native_tool_calls":1,"prompt_tokens":1069,"recovered_tool_calls":0,"total_tokens":1090,"turn":0,"wall_ms":199},"ts_ms":1778888846515}
+{"payload":{"detail":"/dev/null","event":"guard","kind":"cold_read","turn":0},"ts_ms":1778888846515}
+{"payload":{"event":"chat_request","n_messages":4,"n_tools":7,"turn":1},"ts_ms":1778888846515}
+{"payload":{"completion_tokens":12,"error":null,"event":"chat_response","finish_reason":"stop","native_tool_calls":0,"prompt_tokens":1145,"recovered_tool_calls":0,"total_tokens":1157,"turn":1,"wall_ms":93},"ts_ms":1778888846609}
+{"payload":{"event":"stop","final_answer":"17 + 25 is 42.","reason":"FinalAnswer","turn":1,"wall_ms":293},"ts_ms":1778888846609}

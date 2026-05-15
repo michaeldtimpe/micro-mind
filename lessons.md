@@ -230,3 +230,22 @@ The schema-level addition that made this fixture possible: `seed_files: Vec<Seed
 **Affected files**: `src/bench/fixture.rs` (`SeedFile`, `seed_files`), `src/bin/bench_run.rs` (seed write loop in the rep setup, stderr captured in error reporting), `bench/tasks/06-edit-file.toml` (new fixture with `[[seed_files]]` and explicit read-then-edit prompt).
 
 ---
+
+### [2026-05-15] Multi-tool sequencing is past the 1.5 B model's reach; downscope chained fixtures to single-hop
+
+**What happened**: Tried to write a "grep then read_file" fixture (`07-grep-then-read.toml`) where the model would grep for `safe_path`, see the matching file, then read that file to surface the first line. Burned an hour iterating on prompts. The 1.5 B model failed in three distinct ways across iterations:
+1. **Parallel-with-guess**: emitted grep AND read_file in turn 0, with the read using a wildcard path the model invented (`/src/.*`). The cold-read guard correctly refused the read; model gave up.
+2. **Skip-and-claim**: called grep correctly, then in turn 1 said "Now I will read the first line of this file" and emitted no further tool calls — hallucinated the first line in prose instead.
+3. **Refined-regex-into-emptiness**: did a first grep with `safe_path`, then a "refined" grep with `^fn\s+safe_path\s+$` that matched zero lines (real signature is `pub fn safe_path(...)`), concluded the function didn't exist.
+
+**Root cause**: `neo-llm-bench` measured a 0 % BFCL multi-turn floor on this model size. Chained read-after-grep — where turn 1's tool call depends on turn 0's tool result — is exactly that. The model can do one tool hop with a fresh deterministic reasoning chain at temp=0, but the chain that follows up on a tool result and emits another tool call doesn't reliably exist on a 1.5 B parameter base.
+
+This is consistent with `lessons.md/2026-05-14` ("the model will not retry on its own"): the model's instruction-tuned mode is "produce an answer" not "continue working." Once it has *anything* answer-shaped (grep output, refusal note, hallucination), it stops emitting tool calls.
+
+**Fix / takeaway**: Downscoped `07` to a single-hop grep fixture (`07-grep-many-matches.toml`). It still exercises the highest-value piece (tool-result compressor on a many-match grep against a real codebase) but doesn't require sequencing. Passes 3/3 deterministically at 2686 tokens. Principle: **respect the model's measured ceiling. The single-hop floor is where deterministic, useful fixtures live for this size class. Chained-tool workflows are 35 B+ territory (where `luxe` lives) — not 1.5 B.**
+
+The artifact left behind: the `must_call_all_of` predicate (added in `TaskExpect`) is still useful — `06-edit-file` uses it for "must call both read_file AND edit_file." Just don't use it for fixtures that require cross-turn dependency chains.
+
+**Affected files**: `src/bench/fixture.rs` (added `must_call_all_of` to `TaskExpect`), `src/bench/summary.rs` (predicate logic + 2 unit tests), `bench/tasks/07-grep-many-matches.toml` (new, downscoped from the abandoned `07-grep-then-read.toml`).
+
+---

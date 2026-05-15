@@ -46,9 +46,14 @@ pub struct TaskExpect {
     pub min_tool_calls: Option<u32>,
     #[serde(default)]
     pub max_tool_calls: Option<u32>,
-    /// Pass if at least one call to any of these tools is observed.
+    /// Pass if at least one call to any of these tools is observed (OR).
     #[serde(default)]
     pub must_call_any_of: Vec<String>,
+    /// Pass only if every tool in this list is called at least once (AND).
+    /// Use for multi-tool workflows where the test is "did the model do
+    /// step A then step B?" — e.g. grep followed by read_file.
+    #[serde(default)]
+    pub must_call_all_of: Vec<String>,
     /// Fail if any of these tools is observed.
     #[serde(default)]
     pub must_not_call: Vec<String>,

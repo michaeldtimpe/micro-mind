@@ -1,8 +1,8 @@
-{"payload":{"cwd":"/Users/mtimpe/Downloads/micro-mind/bench/baselines/main/.scratch-05-write-from-scratch-rep0","event":"session_start","model":"qwen25-1.5b-instruct","schema_v":2,"tools":["read_file","list_dir","list_files_recursive","grep","write_file","edit_file","bash"]},"ts_ms":1778875412404}
-{"payload":{"event":"chat_request","n_messages":2,"n_tools":7,"turn":0},"ts_ms":1778875412404}
-{"payload":{"completion_tokens":29,"error":null,"event":"chat_response","finish_reason":"tool_calls","native_tool_calls":1,"prompt_tokens":1121,"recovered_tool_calls":0,"total_tokens":1150,"turn":0,"wall_ms":318},"ts_ms":1778875412723}
-{"payload":{"arguments":{"content":"hello world\n","path":"./hello.txt"},"event":"tool_call","name":"write_file","tool_call_id":"jzCn5TlOXOEz6UqZ6NqLi7EgMpFfxzae","turn":0},"ts_ms":1778875412723}
-{"payload":{"bytes_out":37,"cached":false,"error":null,"event":"tool_result","name":"write_file","ok":true,"tool_call_id":"jzCn5TlOXOEz6UqZ6NqLi7EgMpFfxzae","turn":0,"wall_ms":4},"ts_ms":1778875412728}
-{"payload":{"event":"chat_request","n_messages":5,"n_tools":7,"turn":1},"ts_ms":1778875412728}
-{"payload":{"completion_tokens":28,"error":null,"event":"chat_response","finish_reason":"stop","native_tool_calls":0,"prompt_tokens":1202,"recovered_tool_calls":0,"total_tokens":1230,"turn":1,"wall_ms":196},"ts_ms":1778875412925}
-{"payload":{"event":"stop","final_answer":"The file hello.txt has been created in the current directory with the content 'hello world'. It is exactly 12 bytes long.","reason":"FinalAnswer","turn":1,"wall_ms":520},"ts_ms":1778875412925}
+{"payload":{"cwd":"/Users/mtimpe/Downloads/micro-mind/bench/baselines/main/.scratch-05-write-from-scratch-rep0","event":"session_start","model":"qwen25-1.5b-instruct","schema_v":2,"tools":["read_file","list_dir","list_files_recursive","grep","write_file","edit_file","bash"]},"ts_ms":1778888881539}
+{"payload":{"event":"chat_request","n_messages":2,"n_tools":7,"turn":0},"ts_ms":1778888881539}
+{"payload":{"completion_tokens":29,"error":null,"event":"chat_response","finish_reason":"tool_calls","native_tool_calls":1,"prompt_tokens":1121,"recovered_tool_calls":0,"total_tokens":1150,"turn":0,"wall_ms":354},"ts_ms":1778888881893}
+{"payload":{"arguments":{"content":"hello world\n","path":"./hello.txt"},"event":"tool_call","name":"write_file","tool_call_id":"88dz993X6KrEqnkxHfiFYcqhN7PPuSbq","turn":0},"ts_ms":1778888881893}
+{"payload":{"bytes_out":37,"cached":false,"error":null,"event":"tool_result","name":"write_file","ok":true,"tool_call_id":"88dz993X6KrEqnkxHfiFYcqhN7PPuSbq","turn":0,"wall_ms":5},"ts_ms":1778888881899}
+{"payload":{"event":"chat_request","n_messages":5,"n_tools":7,"turn":1},"ts_ms":1778888881899}
+{"payload":{"completion_tokens":28,"error":null,"event":"chat_response","finish_reason":"stop","native_tool_calls":0,"prompt_tokens":1202,"recovered_tool_calls":0,"total_tokens":1230,"turn":1,"wall_ms":196},"ts_ms":1778888882095}
+{"payload":{"event":"stop","final_answer":"The file hello.txt has been created in the current directory with the content 'hello world'. It is exactly 12 bytes long.","reason":"FinalAnswer","turn":1,"wall_ms":556},"ts_ms":1778888882095}
