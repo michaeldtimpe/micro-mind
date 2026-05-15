@@ -51,10 +51,11 @@ pub fn safe_path(cwd: &Path, p: &str) -> Result<PathBuf, String> {
         // points outside the cwd, try the relative interpretation as a
         // fallback — only if the resulting path stays inside the cwd.
         let trimmed = p.trim_start_matches('/');
-        if !trimmed.is_empty() && trimmed != p {
-            if let Ok(p) = safe_path(cwd, trimmed) {
-                return Ok(p);
-            }
+        if !trimmed.is_empty()
+            && trimmed != p
+            && let Ok(p) = safe_path(cwd, trimmed)
+        {
+            return Ok(p);
         }
         return Err(format!("Path escapes the working directory: {}", p));
     }
@@ -117,9 +118,7 @@ pub fn fuzzy_find(text: &str, needle: &str) -> Option<FuzzyMatch> {
     // normalize_for_match performs only character-preserving edits per line
     // (it strips trailing whitespace per line and CRLF→LF). We rebuild a
     // mapping by walking both strings side-by-side.
-    let (start, _) = map_norm_to_orig(text, first_norm)
-        .ok_or_else(|| "map failure")
-        .ok()?;
+    let (start, _) = map_norm_to_orig(text, first_norm)?;
     let needle_orig_len = match_length_in_orig(text, start, &needle_norm)?;
 
     Some(FuzzyMatch {
@@ -134,8 +133,7 @@ fn normalize_for_match(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for line in s.split_inclusive('\n') {
         // Drop a trailing \r before a \n.
-        let (body, terminator) = if line.ends_with('\n') {
-            let body = &line[..line.len() - 1];
+        let (body, terminator) = if let Some(body) = line.strip_suffix('\n') {
             let body = body.strip_suffix('\r').unwrap_or(body);
             (body, "\n")
         } else {

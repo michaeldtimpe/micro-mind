@@ -19,10 +19,34 @@ use clap::Parser;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use micro_mind::bench::summary::check_expectations;
 use micro_mind::bench::{Fixture, TaskOutcome, parse_jsonl_file, summarize_trace};
+
+/// Set by the SIGINT handler. Polled by `run_one`'s wait loop and by the
+/// outer fixture loop. Best-effort — async-signal-safe stores only.
+static SHUTDOWN: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn sigint_handler(_: i32) {
+    // Only async-signal-safe ops allowed in here.
+    SHUTDOWN.store(true, Ordering::SeqCst);
+}
+
+fn install_sigint_handler() {
+    use nix::sys::signal::{SaFlags, SigAction, SigHandler, SigSet, Signal, sigaction};
+    let action = SigAction::new(
+        SigHandler::Handler(sigint_handler),
+        SaFlags::empty(),
+        SigSet::empty(),
+    );
+    // SAFETY: called exactly once from main() before any threads are spawned;
+    // the handler only touches a static AtomicBool.
+    unsafe {
+        let _ = sigaction(Signal::SIGINT, &action);
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -64,6 +88,7 @@ struct Cli {
 }
 
 fn main() -> Result<()> {
+    install_sigint_handler();
     let cli = Cli::parse();
     let fixtures = Fixture::discover(&cli.tasks)
         .with_context(|| format!("discover fixtures in {}", cli.tasks.display()))?;
@@ -100,10 +125,28 @@ fn main() -> Result<()> {
         None => std::env::current_dir()?,
     };
 
+    // Reject fixtures whose prompt could short-circuit the REPL we drive
+    // by stdin (we send `<prompt>\n/quit\n` — a prompt containing a line
+    // beginning with `/quit` / `/q` / `/exit` would terminate early and
+    // produce a misleading trace).
+    for fx in &fixtures {
+        if prompt_has_repl_terminator(&fx.prompt) {
+            anyhow::bail!(
+                "fixture {}: prompt contains a line beginning with /quit /q or /exit, \
+                 which would terminate the REPL before the task runs",
+                fx.id
+            );
+        }
+    }
+
     let mut all_outcomes: Vec<TaskOutcome> = Vec::new();
     let mut failures = 0u32;
-    for fx in &fixtures {
+    'outer: for fx in &fixtures {
         for rep in 0..cli.reps {
+            if SHUTDOWN.load(Ordering::SeqCst) {
+                eprintln!("bench-run: interrupted, stopping after current task");
+                break 'outer;
+            }
             let trace_path = out_dir.join(format!("{}-rep{rep}.jsonl", fx.id));
             print!("  {} rep {}/{} ", fx.id, rep + 1, cli.reps);
             let _ = std::io::stdout().flush();
@@ -185,6 +228,25 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+/// Does any line of `prompt` start with a REPL-terminating slash command?
+/// We strip a leading BOM and trim each line of leading whitespace before
+/// checking.
+fn prompt_has_repl_terminator(prompt: &str) -> bool {
+    let normalized = prompt.strip_prefix('\u{feff}').unwrap_or(prompt);
+    for line in normalized.lines() {
+        let trimmed = line.trim_start();
+        for term in ["/quit", "/q", "/exit"] {
+            if trimmed == term
+                || trimmed.starts_with(&format!("{term} "))
+                || trimmed.starts_with(&format!("{term}\t"))
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn default_out_dir() -> PathBuf {
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -215,16 +277,25 @@ fn run_one(
     ));
     std::fs::create_dir_all(&tmp_rec)?;
 
-    let mut child = Command::new(bin)
-        .arg("-C")
+    let mut cmd = Command::new(bin);
+    cmd.arg("-C")
         .arg(cwd)
         .arg("--record")
         .arg(&tmp_rec)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    // Put the child in its own process group so a single signal can take
+    // out micro-mind *and* the llama-server it owns.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    let mut child = cmd
         .spawn()
         .with_context(|| format!("spawn {}", bin.display()))?;
+    let pgid = nix::unistd::Pid::from_raw(child.id() as i32);
 
     if let Some(mut stdin) = child.stdin.take() {
         writeln!(stdin, "{prompt}")?;
@@ -235,11 +306,19 @@ fn run_one(
     // Wait with a soft timeout. Crude but adequate for a v1 bench runner.
     let started = Instant::now();
     loop {
+        if SHUTDOWN.load(Ordering::SeqCst) {
+            let _ = nix::sys::signal::killpg(pgid, nix::sys::signal::Signal::SIGTERM);
+            let _ = child.wait();
+            anyhow::bail!("interrupted (SIGINT)");
+        }
         match child.try_wait() {
             Ok(Some(_status)) => break,
             Ok(None) => {
                 if started.elapsed().as_secs() > timeout_secs {
-                    let _ = child.kill();
+                    let _ = nix::sys::signal::killpg(pgid, nix::sys::signal::Signal::SIGTERM);
+                    // Brief grace, then SIGKILL the group if anyone's still alive.
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    let _ = nix::sys::signal::killpg(pgid, nix::sys::signal::Signal::SIGKILL);
                     let _ = child.wait();
                     anyhow::bail!("timeout after {timeout_secs}s");
                 }
@@ -268,4 +347,26 @@ fn run_one(
     }
     let _ = std::fs::remove_dir(&tmp_rec);
     Ok(stdout)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_quit_on_its_own_line() {
+        assert!(prompt_has_repl_terminator(
+            "do a thing\n/quit\nthen another"
+        ));
+        assert!(prompt_has_repl_terminator("/q"));
+        assert!(prompt_has_repl_terminator("/exit  with arg"));
+    }
+
+    #[test]
+    fn accepts_quit_inside_normal_text() {
+        // The model can talk about /quit; only a line that *begins* with
+        // a terminator (after optional leading whitespace) is a problem.
+        assert!(!prompt_has_repl_terminator("explain what /quit does"));
+        assert!(!prompt_has_repl_terminator("plain prompt"));
+    }
 }

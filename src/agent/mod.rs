@@ -26,6 +26,9 @@ pub enum StopReason {
     TurnCap,
     WritePressure,
     Dedup,
+    /// The model's reply was truncated by max_tokens (finish_reason="length").
+    /// Distinct from TurnCap (which is the harness's loop limit).
+    Length,
     Error(String),
 }
 
@@ -36,6 +39,7 @@ impl StopReason {
             StopReason::TurnCap => "TurnCap".into(),
             StopReason::WritePressure => "WritePressure".into(),
             StopReason::Dedup => "Dedup".into(),
+            StopReason::Length => "Length".into(),
             StopReason::Error(e) => format!("Error: {e}"),
         }
     }
@@ -78,19 +82,6 @@ impl Session {
         }
     }
 
-    /// Convenience constructor for tests / call sites that don't need a recorder.
-    #[cfg(test)]
-    pub fn new_no_recorder(
-        client: LlmClient,
-        tools: Vec<ToolDef>,
-        cwd: PathBuf,
-        system_prompt: String,
-    ) -> Self {
-        use micro_mind::obs::NoopRecorder;
-        use std::sync::Arc;
-        Self::new(client, tools, cwd, system_prompt, Arc::new(NoopRecorder))
-    }
-
     /// Reset everything except the system prompt — used by /reset.
     pub fn reset(&mut self) {
         let system = self.messages.first().cloned();
@@ -119,6 +110,10 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
     let mut write_pressure = guards::WritePressure::new();
     let mut turns = 0u32;
     let turn_start = Instant::now();
+    // Track the last non-empty assistant content so the Stop event can
+    // surface it (schema v2). For non-FinalAnswer terminations this is
+    // best-effort — the most recent assistant prose, whatever it was.
+    let mut last_assistant_content: Option<String> = None;
 
     loop {
         if turns as usize >= config::MAX_TURNS {
@@ -184,6 +179,28 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
 
         // Push the assistant turn verbatim — including any recovered tool_calls.
         state.messages.push(resp.clone());
+        if let Some(content) = &resp.content
+            && !content.trim().is_empty()
+        {
+            last_assistant_content = Some(content.clone());
+        }
+
+        // Length-truncation guard: if max_tokens cut off the response, don't
+        // dispatch any tool_calls (they may be incomplete) and don't loop.
+        // Push a system note so the model sees the truncation hint next turn.
+        if outcome.finish_reason.as_deref() == Some("length") {
+            state.recorder.record(Event::Guard {
+                turn: turns,
+                kind: "length".into(),
+                detail: None,
+            });
+            render::guard("response truncated (length)");
+            state
+                .messages
+                .push(ChatMessage::system(guards::length_truncation_note()));
+            state.last_stop = Some(StopReason::Length);
+            break;
+        }
 
         if resp.tool_calls.is_empty() {
             if let Some(content) = &resp.content {
@@ -300,6 +317,7 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
                     turn: turns,
                     reason: "WritePressure".into(),
                     wall_ms: turn_start.elapsed().as_millis() as u64,
+                    final_answer: last_assistant_content.clone(),
                 });
                 return Ok(());
             }
@@ -320,6 +338,7 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
             turn: turns,
             reason: reason.label(),
             wall_ms: turn_start.elapsed().as_millis() as u64,
+            final_answer: last_assistant_content,
         });
     }
 

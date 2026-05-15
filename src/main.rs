@@ -7,10 +7,10 @@ mod tools;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use micro_mind::obs::{Event, JsonlRecorder, NoopRecorder, Recorder as _, RecorderHandle};
+use micro_mind::obs::{Event, JsonlRecorder, NoopRecorder, RecorderHandle, SCHEMA_V};
 
 use crate::agent::Session;
 use crate::llm::client::LlmClient;
@@ -64,6 +64,7 @@ fn main() -> Result<()> {
                     cwd: cwd.display().to_string(),
                     model: client.model_name.clone(),
                     tools: tools.iter().map(|t| t.name.clone()).collect(),
+                    schema_v: Some(SCHEMA_V),
                 });
                 handle
             }
@@ -83,15 +84,15 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn build_tool_surface(cwd: &PathBuf) -> Vec<ToolDef> {
+fn build_tool_surface(cwd: &Path) -> Vec<ToolDef> {
     use crate::tools::{fs_read, fs_write, shell};
     vec![
-        fs_read::read_file(cwd.clone()),
-        fs_read::list_dir(cwd.clone()),
-        fs_read::list_files_recursive(cwd.clone()),
-        fs_read::grep(cwd.clone()),
-        fs_write::write_file(cwd.clone()),
-        fs_write::edit_file(cwd.clone()),
-        shell::bash(cwd.clone()),
+        fs_read::read_file(cwd.to_path_buf()),
+        fs_read::list_dir(cwd.to_path_buf()),
+        fs_read::list_files_recursive(cwd.to_path_buf()),
+        fs_read::grep(cwd.to_path_buf()),
+        fs_write::write_file(cwd.to_path_buf()),
+        fs_write::edit_file(cwd.to_path_buf()),
+        shell::bash(cwd.to_path_buf()),
     ]
 }

@@ -252,8 +252,6 @@ fn _unused(_: &Path) {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
-    use std::sync::Arc;
 
     fn tmpdir() -> tempfile_lite::TempDir {
         tempfile_lite::TempDir::new()

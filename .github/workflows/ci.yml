@@ -31,13 +31,11 @@ jobs:
             ${{ runner.os }}-cargo-
       - name: Format check
         run: cargo fmt --all -- --check
-      # Clippy runs but does not gate — the existing codebase has known
-      # warnings we haven't cleaned up yet. The bench/replay/summarize
-      # paths are the gate for now; tighten clippy when the warning floor
-      # hits zero.
-      - name: Clippy (advisory)
-        run: cargo clippy --all-targets
-        continue-on-error: true
+      # Clippy gates the build at zero warnings. The floor is currently
+      # clean; if you legitimately need an exception, add `#[allow(...)]`
+      # at the narrowest scope rather than relaxing this step.
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
       - name: Build
         run: cargo build --all-targets
       - name: Unit tests
@@ -48,3 +46,25 @@ jobs:
         run: cargo run --bin bench-replay -- --fixture bench/samples/sample-fixture.toml --trace bench/samples/sample-trace.jsonl
       - name: Summarize sample trace
         run: cargo run --bin bench-summarize -- --md bench/samples/sample-trace.jsonl
+      # Replay every committed baseline against the fixture set. Each
+      # subdirectory of bench/baselines/ is one historical run; replay
+      # validates that the committed JSONL traces still satisfy the current
+      # fixture predicates. Advisory for now — flip continue-on-error off
+      # once baselines are known stable across the team.
+      - name: Replay committed baselines (advisory)
+        continue-on-error: true
+        run: |
+          shopt -s nullglob
+          found_any=0
+          for runs_dir in bench/baselines/*/; do
+            # Skip dirs that don't have any .jsonl traces yet.
+            jsonls=( "$runs_dir"*.jsonl )
+            if [ ${#jsonls[@]} -eq 0 ]; then continue; fi
+            found_any=1
+            echo "::group::replay $runs_dir"
+            cargo run --bin bench-replay -- --all bench/tasks --runs "$runs_dir" || exit 1
+            echo "::endgroup::"
+          done
+          if [ "$found_any" = "0" ]; then
+            echo "(no baseline traces committed yet — skipping)"
+          fi

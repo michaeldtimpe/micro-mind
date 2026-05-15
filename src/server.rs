@@ -66,7 +66,7 @@ impl ServerHandle {
         }
 
         let child = Command::new(&bin)
-            .args(&[
+            .args([
                 "-m",
                 &model_path.to_string_lossy(),
                 "--ctx-size",

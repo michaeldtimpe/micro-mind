@@ -33,24 +33,6 @@ impl ChatMessage {
             tool_calls: vec![],
         }
     }
-    pub fn assistant_text(text: impl Into<String>) -> Self {
-        Self {
-            role: "assistant".into(),
-            content: Some(text.into()),
-            name: None,
-            tool_call_id: None,
-            tool_calls: vec![],
-        }
-    }
-    pub fn assistant_calls(content: Option<String>, calls: Vec<ToolCall>) -> Self {
-        Self {
-            role: "assistant".into(),
-            content,
-            name: None,
-            tool_call_id: None,
-            tool_calls: calls,
-        }
-    }
     pub fn tool_result(
         call_id: impl Into<String>,
         name: impl Into<String>,

@@ -10,3 +10,8 @@ must_call_any_of = ["read_file"]
 must_not_call = ["write_file", "edit_file", "bash"]
 max_wall_ms = 5000
 max_total_tokens = 2000
+
+# Exercises the schema-v2 final_answer round-trip: the predicate must pass
+# from `bench-replay` alone (no subprocess capture).
+[expect.must_contain]
+text = "micro-mind"

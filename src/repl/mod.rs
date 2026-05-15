@@ -13,7 +13,7 @@ pub fn run(mut session: Session) -> Result<()> {
         "{} {} {}",
         "micro-mind".bold(),
         format!("(qwen25-1.5b-instruct @ ctx={})", config::N_CTX).dimmed(),
-        format!("— /help for commands").dimmed()
+        "— /help for commands".dimmed()
     );
     println!("{}", format!("cwd: {}", session.cwd.display()).dimmed());
 

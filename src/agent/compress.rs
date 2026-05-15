@@ -196,10 +196,10 @@ fn truncate_mid(s: &str, max: usize) -> String {
 }
 
 fn strip_header(text: &str) -> &str {
-    if let Some(rest) = text.strip_prefix('[') {
-        if let Some(idx) = rest.find("]\n") {
-            return &rest[idx + 2..];
-        }
+    if let Some(rest) = text.strip_prefix('[')
+        && let Some(idx) = rest.find("]\n")
+    {
+        return &rest[idx + 2..];
     }
     text
 }
@@ -256,7 +256,7 @@ fn top_extensions(entries: &[&str]) -> Vec<String> {
         }
     }
     let mut sorted: Vec<_> = counts.into_iter().collect();
-    sorted.sort_by(|a, b| b.1.cmp(&a.1));
+    sorted.sort_by_key(|(_, c)| std::cmp::Reverse(*c));
     sorted.into_iter().take(2).map(|(k, _)| k).collect()
 }
 

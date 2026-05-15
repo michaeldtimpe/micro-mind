@@ -99,20 +99,20 @@ impl LlmClient {
         // Text-recovery fallback: if no native tool_calls but the content
         // contains a parseable tool call, promote it. Belt-and-braces for
         // small models that occasionally fall back to text-channel calls.
-        if msg.tool_calls.is_empty() {
-            if let Some(text) = msg.content.as_deref() {
-                let recovered = recover_tool_calls_from_text(text);
-                if !recovered.is_empty() {
-                    // Strip the recovered fragments out of the visible content.
-                    let stripped = strip_recovered(text);
-                    msg.content = if stripped.trim().is_empty() {
-                        None
-                    } else {
-                        Some(stripped)
-                    };
-                    recovered_tool_calls = recovered.len();
-                    msg.tool_calls = recovered;
-                }
+        if msg.tool_calls.is_empty()
+            && let Some(text) = msg.content.as_deref()
+        {
+            let recovered = recover_tool_calls_from_text(text);
+            if !recovered.is_empty() {
+                // Strip the recovered fragments out of the visible content.
+                let stripped = strip_recovered(text);
+                msg.content = if stripped.trim().is_empty() {
+                    None
+                } else {
+                    Some(stripped)
+                };
+                recovered_tool_calls = recovered.len();
+                msg.tool_calls = recovered;
             }
         }
 
@@ -154,12 +154,11 @@ pub fn recover_tool_calls_from_text(text: &str) -> Vec<ToolCall> {
 
     // Pattern 2: bare top-level JSON with name+arguments — only if we
     // didn't find any wrapped calls, to avoid double-counting.
-    if out.is_empty() {
-        if let Some(json_slice) = extract_first_balanced_json(text) {
-            if let Some(tc) = parse_named_call(json_slice, &mut counter) {
-                out.push(tc);
-            }
-        }
+    if out.is_empty()
+        && let Some(json_slice) = extract_first_balanced_json(text)
+        && let Some(tc) = parse_named_call(json_slice, &mut counter)
+    {
+        out.push(tc);
     }
 
     out
@@ -224,10 +223,7 @@ fn extract_first_balanced_json(text: &str) -> Option<&str> {
 fn strip_recovered(text: &str) -> String {
     let mut s = text.to_string();
     // Remove all <tool_call>...</tool_call> blocks.
-    loop {
-        let Some(start) = s.find("<tool_call>") else {
-            break;
-        };
+    while let Some(start) = s.find("<tool_call>") {
         let Some(end) = s[start..].find("</tool_call>") else {
             break;
         };

@@ -63,14 +63,6 @@ impl ToolCallResult {
     pub fn is_ok(&self) -> bool {
         self.error.is_none()
     }
-
-    pub fn payload(&self) -> &str {
-        if let Some(err) = &self.error {
-            err
-        } else {
-            &self.result
-        }
-    }
 }
 
 /// Validate args against a tool's JSON-Schema parameters.
@@ -85,34 +77,34 @@ pub fn validate_args(params: &Value, args: &Value) -> Option<String> {
 
     if let Some(required) = params.get("required").and_then(|v| v.as_array()) {
         for r in required {
-            if let Some(name) = r.as_str() {
-                if !args_obj.contains_key(name) {
-                    return Some(format!("Missing required argument: {}", name));
-                }
+            if let Some(name) = r.as_str()
+                && !args_obj.contains_key(name)
+            {
+                return Some(format!("Missing required argument: {}", name));
             }
         }
     }
 
     if let Some(props) = params.get("properties").and_then(|v| v.as_object()) {
         for (k, v) in args_obj {
-            if let Some(prop_spec) = props.get(k) {
-                if let Some(expected) = prop_spec.get("type").and_then(|t| t.as_str()) {
-                    let actual = type_name(v);
-                    let ok = match expected {
-                        "string" => v.is_string(),
-                        "integer" => v.is_i64() || v.is_u64(),
-                        "number" => v.is_number(),
-                        "boolean" => v.is_boolean(),
-                        "array" => v.is_array(),
-                        "object" => v.is_object(),
-                        _ => true,
-                    };
-                    if !ok {
-                        return Some(format!(
-                            "Argument '{}' should be {}, got {}",
-                            k, expected, actual
-                        ));
-                    }
+            if let Some(prop_spec) = props.get(k)
+                && let Some(expected) = prop_spec.get("type").and_then(|t| t.as_str())
+            {
+                let actual = type_name(v);
+                let ok = match expected {
+                    "string" => v.is_string(),
+                    "integer" => v.is_i64() || v.is_u64(),
+                    "number" => v.is_number(),
+                    "boolean" => v.is_boolean(),
+                    "array" => v.is_array(),
+                    "object" => v.is_object(),
+                    _ => true,
+                };
+                if !ok {
+                    return Some(format!(
+                        "Argument '{}' should be {}, got {}",
+                        k, expected, actual
+                    ));
                 }
             }
         }
@@ -143,7 +135,7 @@ pub fn hard_truncate(s: &str) -> String {
     }
     let mut out = s.as_bytes()[..cap].to_vec();
     // Truncate cleanly at a UTF-8 boundary.
-    while !std::str::from_utf8(&out).is_ok() && !out.is_empty() {
+    while std::str::from_utf8(&out).is_err() && !out.is_empty() {
         out.pop();
     }
     let mut text = String::from_utf8_lossy(&out).to_string();

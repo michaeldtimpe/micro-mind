@@ -30,10 +30,10 @@ pub const LIST_RECURSIVE_DEFAULT_DEPTH: usize = 3;
 pub const GREP_MAX_MATCHES_DEFAULT: usize = 50;
 
 pub fn expand_tilde(p: &str) -> PathBuf {
-    if let Some(stripped) = p.strip_prefix("~/") {
-        if let Some(home) = std::env::var_os("HOME") {
-            return PathBuf::from(home).join(stripped);
-        }
+    if let Some(stripped) = p.strip_prefix("~/")
+        && let Some(home) = std::env::var_os("HOME")
+    {
+        return PathBuf::from(home).join(stripped);
     }
     PathBuf::from(p)
 }

@@ -37,7 +37,7 @@ pub fn bash(cwd: PathBuf) -> ToolDef {
                 .get("timeout_s")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(30)
-                .min(300) as u64;
+                .min(300);
 
             let tokens = shlex::split(cmd_str)
                 .ok_or_else(|| format!("Could not parse command (unbalanced quote?): {cmd_str}"))?;

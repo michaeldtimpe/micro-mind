@@ -83,8 +83,8 @@ fn summarize_one(path: &PathBuf, rows: &mut Vec<(String, Summary)>) -> Result<()
 
 fn print_text(rows: &[(String, Summary)]) {
     println!(
-        "{:<40} {:>6} {:>8} {:>7} {:>5} {:>6} {:>5} {}",
-        "trace", "tools", "tokens", "wall_ms", "guard", "nat", "rec", "stop"
+        "{:<40} {:>6} {:>8} {:>7} {:>5} {:>6} {:>5} stop",
+        "trace", "tools", "tokens", "wall_ms", "guard", "nat", "rec"
     );
     for (path, s) in rows {
         let path_short = shorten(path, 40);

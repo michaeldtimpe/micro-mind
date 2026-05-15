@@ -94,10 +94,19 @@ pub fn summarize_trace(events: &[TraceEvent]) -> Summary {
                 *s.guards_by_kind.entry(kind.clone()).or_insert(0) += 1;
             }
             Event::Stop {
-                reason, wall_ms, ..
+                reason,
+                wall_ms,
+                final_answer,
+                ..
             } => {
                 s.stop_reason = Some(reason.clone());
                 s.wall_ms = *wall_ms;
+                // Schema v2: traces carry the final assistant content. When
+                // present, this is authoritative — overrides any value the
+                // bench-run subprocess capture may have written.
+                if let Some(fa) = final_answer {
+                    s.final_answer = Some(fa.clone());
+                }
             }
             Event::SessionStart { .. } => {}
         }
@@ -125,15 +134,15 @@ pub fn check_expectations(fx: &Fixture, s: &Summary) -> Vec<String> {
             }
         }
     }
-    if let Some(min) = fx.expect.min_tool_calls {
-        if s.tool_calls < min {
-            fails.push(format!("tool_calls={} < min={min}", s.tool_calls));
-        }
+    if let Some(min) = fx.expect.min_tool_calls
+        && s.tool_calls < min
+    {
+        fails.push(format!("tool_calls={} < min={min}", s.tool_calls));
     }
-    if let Some(max) = fx.expect.max_tool_calls {
-        if s.tool_calls > max {
-            fails.push(format!("tool_calls={} > max={max}", s.tool_calls));
-        }
+    if let Some(max) = fx.expect.max_tool_calls
+        && s.tool_calls > max
+    {
+        fails.push(format!("tool_calls={} > max={max}", s.tool_calls));
     }
     if !fx.expect.must_call_any_of.is_empty() {
         let any = fx
@@ -158,16 +167,20 @@ pub fn check_expectations(fx: &Fixture, s: &Summary) -> Vec<String> {
             fails.push(format!("forbidden tool call: {bad}"));
         }
     }
-    if let Some(max) = fx.expect.max_wall_ms {
-        if s.wall_ms > max {
-            fails.push(format!("wall_ms={} > max={max}", s.wall_ms));
-        }
+    if let Some(max) = fx.expect.max_wall_ms
+        && s.wall_ms > max
+    {
+        fails.push(format!("wall_ms={} > max={max}", s.wall_ms));
     }
-    if let Some(max) = fx.expect.max_total_tokens {
-        if s.total_tokens > max {
-            fails.push(format!("total_tokens={} > max={max}", s.total_tokens));
-        }
+    if let Some(max) = fx.expect.max_total_tokens
+        && s.total_tokens > max
+    {
+        fails.push(format!("total_tokens={} > max={max}", s.total_tokens));
     }
+    // NOTE: must_contain reads `final_answer`, which is filled either by
+    // `bench-run` (from subprocess stdout) OR by the schema-v2 Stop event
+    // (preferred when present). Pre-v2 traces have `None` here and will
+    // fail-closed on this predicate unless bench-run's capture is also wired.
     if let Some(mc) = &fx.expect.must_contain {
         match &s.final_answer {
             None => fails.push(format!(
@@ -241,6 +254,7 @@ mod tests {
                 turn: 1,
                 reason: "FinalAnswer".into(),
                 wall_ms: 250,
+                final_answer: None,
             }),
         ];
         let s = summarize_trace(&evs);

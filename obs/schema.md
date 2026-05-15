@@ -1,4 +1,4 @@
-# Observability event schema (v0)
+# Observability event schema (v2)
 
 micro-mind emits append-only JSONL when run with `--record <dir>`:
 
@@ -32,8 +32,11 @@ Every line has the same envelope:
 Emitted once at startup when recording is enabled.
 
 ```json
-{"event":"session_start","cwd":"/Users/m/proj","model":"qwen25-1.5b-instruct","tools":["read_file","grep","..."]}
+{"event":"session_start","cwd":"/Users/m/proj","model":"qwen25-1.5b-instruct","tools":["read_file","grep","..."],"schema_v":2}
 ```
+
+`schema_v` is optional (omitted by v1 emitters); when absent, readers should
+assume v1. v1 traces remain forward-compatible: every v2 field is optional.
 
 ### `chat_request`
 
@@ -110,8 +113,20 @@ next user input.
 | Field | Type | Notes |
 |---|---|---|
 | `turn` | u32 | turn index at termination |
-| `reason` | string | one of `FinalAnswer`, `TurnCap`, `WritePressure`, `Dedup`, `Error: …` |
+| `reason` | string | one of `FinalAnswer`, `TurnCap`, `WritePressure`, `Dedup`, `Length`, `Error: …` |
 | `wall_ms` | u64 | total elapsed from start of `run_turn` |
+| `final_answer` | string? | (v2) most recent non-empty assistant content, if any. For `FinalAnswer` stops this is the user-visible answer; for other terminations it's a best-effort snapshot of the model's last prose. Omitted when no assistant message produced visible content. |
+
+## Final assistant content
+
+Schema v2 carries the most recent assistant prose in `stop.final_answer`,
+so `bench-replay` (offline, trace-only) can validate
+`expect.must_contain` without needing a subprocess capture. Pre-v2 traces
+omit the field and will fail-closed on that predicate unless `bench-run`
+fills it from the subprocess's stdout.
+
+Privacy/size tradeoff: traces now include verbatim model output. If that's
+a problem for a particular session, scrub the stop events post-hoc.
 
 ## Stability guarantees
 

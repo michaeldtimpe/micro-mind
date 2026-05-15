@@ -1,0 +1,256 @@
+{
+  "n_failures": 6,
+  "n_outcomes": 9,
+  "outcomes": [
+    {
+      "failures": [
+        "total_tokens=4714 > max=4096"
+      ],
+      "id": "01-read-readme-rep0",
+      "passed": false,
+      "stats": {
+        "cached_tool_calls": 0,
+        "chat_errors": 0,
+        "chat_round_trips": 2,
+        "completion_tokens": 156,
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ read_file path=\"/Users/mtimpe/Downloads/micro-mind/REA\"…\n  └ ok 0ms 8262 bytes\n\nmicro-mind is a Claude Code-style interactive development REPL powered by `qwen25-1.5b-instruct` via `llama-server`. It offers a single capable 1.5 B model for minimum-RAM operation and supports 7 tool surfaces: `read_file`, `list_dir`, `list_files_recursive`, `grep`, `write_file`, `edit_file`, and `bash`. The harness mitigates risks like irrelevance over-call, parallel under-call, agentic drift, literal-dedup-evading whitespace/path mutations, etc., ensuring a robust and efficient development environment.\n\n",
+        "guard_fires": 0,
+        "guards_by_kind": {},
+        "native_tool_calls": 1,
+        "prompt_tokens": 4558,
+        "recovered_tool_calls": 0,
+        "stop_reason": "FinalAnswer",
+        "tool_calls": 1,
+        "tool_calls_by_name": {
+          "read_file": 1
+        },
+        "tool_errors": 0,
+        "total_tokens": 4714,
+        "wall_ms": 1358
+      },
+      "trace_path": "bench/baselines/2026-05-15-main/01-read-readme-rep0.jsonl"
+    },
+    {
+      "failures": [
+        "total_tokens=4714 > max=4096"
+      ],
+      "id": "01-read-readme-rep1",
+      "passed": false,
+      "stats": {
+        "cached_tool_calls": 0,
+        "chat_errors": 0,
+        "chat_round_trips": 2,
+        "completion_tokens": 156,
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ read_file path=\"/Users/mtimpe/Downloads/micro-mind/REA\"…\n  └ ok 0ms 8262 bytes\n\nmicro-mind is a Claude Code-style interactive development REPL powered by `qwen25-1.5b-instruct` via `llama-server`. It offers a single capable 1.5 B model for minimum-RAM operation and supports 7 tool surfaces: `read_file`, `list_dir`, `list_files_recursive`, `grep`, `write_file`, `edit_file`, and `bash`. The harness mitigates risks like irrelevance over-call, parallel under-call, agentic drift, literal-dedup-evading whitespace/path mutations, etc., ensuring a robust and efficient development environment.\n\n",
+        "guard_fires": 0,
+        "guards_by_kind": {},
+        "native_tool_calls": 1,
+        "prompt_tokens": 4558,
+        "recovered_tool_calls": 0,
+        "stop_reason": "FinalAnswer",
+        "tool_calls": 1,
+        "tool_calls_by_name": {
+          "read_file": 1
+        },
+        "tool_errors": 0,
+        "total_tokens": 4714,
+        "wall_ms": 1283
+      },
+      "trace_path": "bench/baselines/2026-05-15-main/01-read-readme-rep1.jsonl"
+    },
+    {
+      "failures": [
+        "total_tokens=4714 > max=4096"
+      ],
+      "id": "01-read-readme-rep2",
+      "passed": false,
+      "stats": {
+        "cached_tool_calls": 0,
+        "chat_errors": 0,
+        "chat_round_trips": 2,
+        "completion_tokens": 156,
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ read_file path=\"/Users/mtimpe/Downloads/micro-mind/REA\"…\n  └ ok 0ms 8262 bytes\n\nmicro-mind is a Claude Code-style interactive development REPL powered by `qwen25-1.5b-instruct` via `llama-server`. It offers a single capable 1.5 B model for minimum-RAM operation and supports 7 tool surfaces: `read_file`, `list_dir`, `list_files_recursive`, `grep`, `write_file`, `edit_file`, and `bash`. The harness mitigates risks like irrelevance over-call, parallel under-call, agentic drift, literal-dedup-evading whitespace/path mutations, etc., ensuring a robust and efficient development environment.\n\n",
+        "guard_fires": 0,
+        "guards_by_kind": {},
+        "native_tool_calls": 1,
+        "prompt_tokens": 4558,
+        "recovered_tool_calls": 0,
+        "stop_reason": "FinalAnswer",
+        "tool_calls": 1,
+        "tool_calls_by_name": {
+          "read_file": 1
+        },
+        "tool_errors": 0,
+        "total_tokens": 4714,
+        "wall_ms": 1264
+      },
+      "trace_path": "bench/baselines/2026-05-15-main/01-read-readme-rep2.jsonl"
+    },
+    {
+      "failures": [],
+      "id": "02-list-rust-files-rep0",
+      "passed": true,
+      "stats": {
+        "cached_tool_calls": 0,
+        "chat_errors": 0,
+        "chat_round_trips": 2,
+        "completion_tokens": 108,
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ list_files_recursive path=\"/Users/mtimpe/Downloads/micro-mind/src\"\n  └ ok 0ms 646 bytes\n\nThere are 38 Rust source files in the src directory. They include:\n\n- `bench`\n- `tools`\n- `llm`\n- `bin`\n- `config.rs`\n- `lib.rs`\n- `repl`\n- `agent`\n- `server.rs`\n- `obs`\n\nThese files span various subdirectories and modules within the src/ directory.\n\n",
+        "guard_fires": 0,
+        "guards_by_kind": {},
+        "native_tool_calls": 1,
+        "prompt_tokens": 2450,
+        "recovered_tool_calls": 0,
+        "stop_reason": "FinalAnswer",
+        "tool_calls": 1,
+        "tool_calls_by_name": {
+          "list_files_recursive": 1
+        },
+        "tool_errors": 0,
+        "total_tokens": 2558,
+        "wall_ms": 734
+      },
+      "trace_path": "bench/baselines/2026-05-15-main/02-list-rust-files-rep0.jsonl"
+    },
+    {
+      "failures": [],
+      "id": "02-list-rust-files-rep1",
+      "passed": true,
+      "stats": {
+        "cached_tool_calls": 0,
+        "chat_errors": 0,
+        "chat_round_trips": 2,
+        "completion_tokens": 108,
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ list_files_recursive path=\"/Users/mtimpe/Downloads/micro-mind/src\"\n  └ ok 1ms 646 bytes\n\nThere are 38 Rust source files in the src directory. They include:\n\n- `bench`\n- `tools`\n- `llm`\n- `bin`\n- `config.rs`\n- `lib.rs`\n- `repl`\n- `agent`\n- `server.rs`\n- `obs`\n\nThese files span various subdirectories and modules within the src/ directory.\n\n",
+        "guard_fires": 0,
+        "guards_by_kind": {},
+        "native_tool_calls": 1,
+        "prompt_tokens": 2450,
+        "recovered_tool_calls": 0,
+        "stop_reason": "FinalAnswer",
+        "tool_calls": 1,
+        "tool_calls_by_name": {
+          "list_files_recursive": 1
+        },
+        "tool_errors": 0,
+        "total_tokens": 2558,
+        "wall_ms": 754
+      },
+      "trace_path": "bench/baselines/2026-05-15-main/02-list-rust-files-rep1.jsonl"
+    },
+    {
+      "failures": [],
+      "id": "02-list-rust-files-rep2",
+      "passed": true,
+      "stats": {
+        "cached_tool_calls": 0,
+        "chat_errors": 0,
+        "chat_round_trips": 2,
+        "completion_tokens": 108,
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ list_files_recursive path=\"/Users/mtimpe/Downloads/micro-mind/src\"\n  └ ok 0ms 646 bytes\n\nThere are 38 Rust source files in the src directory. They include:\n\n- `bench`\n- `tools`\n- `llm`\n- `bin`\n- `config.rs`\n- `lib.rs`\n- `repl`\n- `agent`\n- `server.rs`\n- `obs`\n\nThese files span various subdirectories and modules within the src/ directory.\n\n",
+        "guard_fires": 0,
+        "guards_by_kind": {},
+        "native_tool_calls": 1,
+        "prompt_tokens": 2450,
+        "recovered_tool_calls": 0,
+        "stop_reason": "FinalAnswer",
+        "tool_calls": 1,
+        "tool_calls_by_name": {
+          "list_files_recursive": 1
+        },
+        "tool_errors": 0,
+        "total_tokens": 2558,
+        "wall_ms": 677
+      },
+      "trace_path": "bench/baselines/2026-05-15-main/02-list-rust-files-rep2.jsonl"
+    },
+    {
+      "failures": [
+        "forbidden tool call: read_file",
+        "total_tokens=2344 > max=1024"
+      ],
+      "id": "03-decline-irrelevant-rep0",
+      "passed": false,
+      "stats": {
+        "cached_tool_calls": 0,
+        "chat_errors": 0,
+        "chat_round_trips": 2,
+        "completion_tokens": 33,
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ read_file path=\"/dev/null\"\n  └ ERROR 0ms\n    Cannot stat /Users/mtimpe/Downloads/micro-mind/dev/null: No such file or directory (os error 2)\n\n17 + 25 equals 42.\n\n",
+        "guard_fires": 0,
+        "guards_by_kind": {},
+        "native_tool_calls": 1,
+        "prompt_tokens": 2311,
+        "recovered_tool_calls": 0,
+        "stop_reason": "FinalAnswer",
+        "tool_calls": 1,
+        "tool_calls_by_name": {
+          "read_file": 1
+        },
+        "tool_errors": 1,
+        "total_tokens": 2344,
+        "wall_ms": 261
+      },
+      "trace_path": "bench/baselines/2026-05-15-main/03-decline-irrelevant-rep0.jsonl"
+    },
+    {
+      "failures": [
+        "forbidden tool call: read_file",
+        "total_tokens=2344 > max=1024"
+      ],
+      "id": "03-decline-irrelevant-rep1",
+      "passed": false,
+      "stats": {
+        "cached_tool_calls": 0,
+        "chat_errors": 0,
+        "chat_round_trips": 2,
+        "completion_tokens": 33,
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ read_file path=\"/dev/null\"\n  └ ERROR 0ms\n    Cannot stat /Users/mtimpe/Downloads/micro-mind/dev/null: No such file or directory (os error 2)\n\n17 + 25 equals 42.\n\n",
+        "guard_fires": 0,
+        "guards_by_kind": {},
+        "native_tool_calls": 1,
+        "prompt_tokens": 2311,
+        "recovered_tool_calls": 0,
+        "stop_reason": "FinalAnswer",
+        "tool_calls": 1,
+        "tool_calls_by_name": {
+          "read_file": 1
+        },
+        "tool_errors": 1,
+        "total_tokens": 2344,
+        "wall_ms": 280
+      },
+      "trace_path": "bench/baselines/2026-05-15-main/03-decline-irrelevant-rep1.jsonl"
+    },
+    {
+      "failures": [
+        "forbidden tool call: read_file",
+        "total_tokens=2344 > max=1024"
+      ],
+      "id": "03-decline-irrelevant-rep2",
+      "passed": false,
+      "stats": {
+        "cached_tool_calls": 0,
+        "chat_errors": 0,
+        "chat_round_trips": 2,
+        "completion_tokens": 33,
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ read_file path=\"/dev/null\"\n  └ ERROR 0ms\n    Cannot stat /Users/mtimpe/Downloads/micro-mind/dev/null: No such file or directory (os error 2)\n\n17 + 25 equals 42.\n\n",
+        "guard_fires": 0,
+        "guards_by_kind": {},
+        "native_tool_calls": 1,
+        "prompt_tokens": 2311,
+        "recovered_tool_calls": 0,
+        "stop_reason": "FinalAnswer",
+        "tool_calls": 1,
+        "tool_calls_by_name": {
+          "read_file": 1
+        },
+        "tool_errors": 1,
+        "total_tokens": 2344,
+        "wall_ms": 268
+      },
+      "trace_path": "bench/baselines/2026-05-15-main/03-decline-irrelevant-rep2.jsonl"
+    }
+  ],
+  "schema_v": 1
+}

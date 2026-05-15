@@ -2,7 +2,7 @@
 
 A Claude Code-style interactive development REPL powered by `qwen25-1.5b-instruct` via `llama-server`. Sister project to [`michaeldtimpe/luxe`](https://github.com/michaeldtimpe/luxe) (MLX-only, 35 B MoE) and [`michaeldtimpe/neo-llm-bench`](https://github.com/michaeldtimpe/neo-llm-bench) (the bake-off that picked this model).
 
-> **Status:** v1. End-to-end smoke 5/5 across the canonical workflows (list, read, grep, decline-irrelevance, decline-math). 81/81 unit tests passing. Release binary 2.6 MB stripped. See `RESUME.md` (forthcoming) for active state.
+> **Status:** v1 + observability. End-to-end smoke 5/5 across the canonical workflows (list, read, grep, decline-irrelevance, decline-math). 106/106 unit tests passing. Release binary 2.6 MB stripped. Schema v2 JSONL traces, four bench binaries, first committed baseline (`bench/baselines/2026-05-15-main/`: 3/9 reps pass — see CLAUDE.md for what the failures tell you). See `RESUME.md` (forthcoming) for active state.
 
 ## Why this exists
 
@@ -137,8 +137,11 @@ REPL commands:
 | Routing entropy from too many tools | 7-tool lean surface, no `glob` | `src/main.rs:build_tool_surface` |
 | Cold-starting `llama.cpp` on every reset | Singleton server, `/reset` clears conv only | `src/server.rs` |
 | Model emits absolute `/src/...` for relative `src/...` | Leading-slash fallback in `safe_path` | `src/tools/fs_utils.rs` |
+| `max_tokens` truncation produces incomplete tool_calls | Length-truncation exit + concision note | `src/agent/mod.rs`, `src/agent/guards.rs` |
 
-Discovered during live smoke, not from prior analysis: the last row. The model emitted `/src/` consistently; harness now strips the leading slash if the absolute form would escape the cwd but the relative form is valid.
+Discovered during live smoke, not from prior analysis: the leading-slash row.
+The model emitted `/src/` consistently; harness now strips the leading slash
+if the absolute form would escape the cwd but the relative form is valid.
 
 ## Out of scope (v1)
 
@@ -165,9 +168,13 @@ cargo run --bin bench-replay -- --all bench/tasks --runs bench/runs/today
 
 # Diff against a checked-in baseline; non-zero exit on regression.
 cargo run --bin bench-compare -- \
-  --baseline bench/baselines/<date>.json \
+  --baseline bench/baselines/<date>-<label>/summary.json \
   --candidate bench/runs/today/summary.json
 ```
+
+Baselines live as directories (`bench/baselines/<date>-<label>/`) containing
+both the aggregate `summary.json` and per-rep JSONL traces. CI replays every
+committed baseline against the current fixture set as an advisory check.
 
 Documentation:
 - [`obs/schema.md`](obs/schema.md) — JSONL event schema (envelope, variants, `jq` recipes).
@@ -175,10 +182,11 @@ Documentation:
 - [`bench/ablations.md`](bench/ablations.md) — sketched experiments (KV cache, tool surface, semantic summaries).
 - [`bench/baselines/README.md`](bench/baselines/README.md) — how baselines are captured, named, and retired.
 
-CI (`.github/workflows/ci.yml`) runs `cargo test`, `clippy`, `fmt`, and the
-schema/replay/summarize binaries against the checked-in sample trace.
-**It does not invoke the model** — that requires `llama-server` plus a GPU
-and is not deterministic across runners.
+CI (`.github/workflows/ci.yml`) runs `cargo test`, `cargo fmt --check`,
+`cargo clippy -D warnings` (gating), and the schema/replay/summarize
+binaries against the checked-in sample trace plus every committed
+baseline. **It does not invoke the model** — that requires `llama-server`
+plus a GPU and is not deterministic across runners.
 
 ## Publishing claims responsibly
 

@@ -54,10 +54,6 @@ impl SemanticDedup {
             .collect();
         tail.iter().all(|s| **s == key)
     }
-
-    pub fn reset(&mut self) {
-        self.history.clear();
-    }
 }
 
 /// Normalize a (name, args) pair for stable comparison.
@@ -90,10 +86,10 @@ fn normalize_value(v: &Value) -> Value {
 
 fn normalize_value_for_field(key: &str, v: &Value) -> Value {
     let normalized = normalize_value(v);
-    if matches!(key, "path" | "file" | "directory" | "dir") {
-        if let Value::String(s) = &normalized {
-            return Value::String(canonicalize_path(s));
-        }
+    if matches!(key, "path" | "file" | "directory" | "dir")
+        && let Value::String(s) = &normalized
+    {
+        return Value::String(canonicalize_path(s));
     }
     normalized
 }
@@ -128,7 +124,7 @@ impl ReadTracker {
             self.seen.insert(canonicalize_path(p));
         }
         // grep without an explicit path defaults to ".".
-        if name == "grep" && !args.get("path").is_some() {
+        if name == "grep" && args.get("path").is_none() {
             self.seen.insert(".".to_string());
         }
         // grep / list_dir on a directory covers files reached by future writes
@@ -164,10 +160,6 @@ impl ReadTracker {
         // Always allow if root "." was scanned (the model has surveyed the repo).
         self.seen.contains(".")
     }
-
-    pub fn reset(&mut self) {
-        self.seen.clear();
-    }
 }
 
 /// Tracks the write-pressure signal: after a successful write, every
@@ -199,11 +191,6 @@ impl WritePressure {
         self.zero_byte_streak = 0;
         false
     }
-
-    pub fn reset(&mut self) {
-        self.writes = 0;
-        self.zero_byte_streak = 0;
-    }
 }
 
 /// Emit a synthetic system note that the model should see when the dedup
@@ -221,6 +208,15 @@ pub fn read_before_write_note(path: &str) -> String {
         "Refused: read {} before modifying it. Call read_file (or list_dir / grep) on it first.",
         path
     )
+}
+
+/// Synthetic system note for when the previous response was truncated by
+/// max_tokens. Persists across `run_turn` calls so the model sees it on
+/// the next user input.
+pub fn length_truncation_note() -> String {
+    "Your previous response was cut off at the max_tokens limit. Be more concise: \
+     answer directly without restating the question, and prefer one tool call at a time."
+        .to_string()
 }
 
 /// Build the tool args representation we store in dedup keys. Useful in tests.

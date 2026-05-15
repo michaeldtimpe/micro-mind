@@ -67,14 +67,26 @@ pub enum Event {
         turn: u32,
         reason: String,
         wall_ms: u64,
+        /// The visible content of the last assistant message, if any. Added
+        /// in schema v2 so consumers can validate `must_contain` from the
+        /// trace alone (older traces emit `None` here and remain valid).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        final_answer: Option<String>,
     },
     /// A new session was opened (recording started).
     SessionStart {
         cwd: String,
         model: String,
         tools: Vec<String>,
+        /// Wire-format version of the events that follow in this session.
+        /// Optional for backward compatibility with v1 readers.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        schema_v: Option<u32>,
     },
 }
+
+/// Wire-format version of the JSONL event stream.
+pub const SCHEMA_V: u32 = 2;
 
 /// Public recorder interface. `record(...)` must be cheap and infallible
 /// from the caller's perspective.
@@ -129,10 +141,10 @@ impl JsonlRecorder {
     /// Open at an exact path (used by tests).
     pub fn open_path(path: impl AsRef<Path>) -> std::io::Result<Self> {
         let path = path.as_ref().to_path_buf();
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                create_dir_all(parent)?;
-            }
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            create_dir_all(parent)?;
         }
         let file = OpenOptions::new().create(true).append(true).open(&path)?;
         Ok(Self {
@@ -246,6 +258,7 @@ mod tests {
             turn: 2,
             reason: "FinalAnswer".into(),
             wall_ms: 100,
+            final_answer: None,
         });
         drop(r);
         let body = read_to_string(&path).unwrap();

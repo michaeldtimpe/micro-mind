@@ -14,20 +14,40 @@ The champion path is locked end-to-end:
 
 ## Project shape
 
-A single Rust binary. Entry point `src/main.rs`. Talks to `llama-server` over HTTP via `ureq` (blocking, no tokio — the REPL is single-threaded and the 80 MB tokio runtime weight isn't worth it on a tool meant to leave headroom for the 1.6 GB model).
+A Rust binary + a thin library facet. Entry point `src/main.rs`. Library
+crate (`src/lib.rs`) exposes only the observability schema and the bench
+helpers so the four `bench-*` bins can reuse them without dragging in
+`agent/tools/repl`. Talks to `llama-server` over HTTP via `ureq` (blocking,
+no tokio — the REPL is single-threaded and the 80 MB tokio runtime weight
+isn't worth it on a tool meant to leave headroom for the 1.6 GB model).
 
 Module map (read `ARCHITECTURE.md` for the long version):
 
 ```
 src/
 ├─ main.rs                clap CLI, build_tool_surface, REPL bootstrap
+├─ lib.rs                 library facet (pub mod bench, obs)
 ├─ config.rs              all numeric defaults (ctx, sampling, caps)
 ├─ server.rs              llama-server lifecycle (singleton)
 ├─ llm/                   chat client, types, system prompt
 ├─ tools/                 7-tool surface + dispatch + cache + fs_utils
 ├─ agent/                 run_turn loop + guards + context + compress + coach
-└─ repl/                  rustyline UI + compact rendering
+├─ repl/                  rustyline UI + compact rendering
+├─ obs/                   Recorder trait + JSONL recorder (schema: obs/schema.md)
+├─ bench/                 Fixture/Summary types, trace parser, expectation checks
+└─ bin/                   bench-run, bench-summarize, bench-replay, bench-compare
+
+bench/
+├─ tasks/                 *.toml fixtures (one task per file)
+├─ baselines/             checked-in historical runs (dir-per-run, see README)
+└─ samples/               sample trace + fixture exercised by CI
 ```
+
+Observability is opt-in: pass `--record <dir>` to the main binary to append
+JSONL events for the session. CI is hermetic — it exercises `bench-replay`
++ `bench-summarize` against `bench/samples/`, plus an advisory replay of
+every committed baseline. No llama-server required at any CI step.
+`clippy -D warnings` and `cargo fmt --check` both gate.
 
 ## Architecture: layered survival primitives
 
@@ -37,7 +57,9 @@ Three layers of mitigation:
 
 1. **Prompt layer** (`src/llm/prompt.rs`) — BFCL v2 anti-over-call + parallel + math rules, plus single-action bias and strict-output behaviour.
 2. **Tool layer** (`src/tools/`) — fuzzy edit-matching, atomic writes, honesty guards, shell metacharacter rejection, 8 KB hard output cap, large-file refusal.
-3. **Agent loop layer** (`src/agent/`) — semantic dedup, read-before-write enforcement, write-pressure exit, failure-memory injection, write-aware context elision, per-tool semantic summarization, harness-level error coaching.
+3. **Agent loop layer** (`src/agent/`) — semantic dedup, read-before-write enforcement, write-pressure exit, length-truncation exit, failure-memory injection, write-aware context elision, per-tool semantic summarization, harness-level error coaching.
+
+Stop reasons emitted by `run_turn` (all surfaced in `obs/schema.md` and as fixture predicates): `FinalAnswer`, `TurnCap`, `WritePressure`, `Dedup`, `Length`, `Error: …`.
 
 When the model fails a task, the **first** question is "which layer should catch this?" Not "is the model dumb?". The 5 smoke workflows passed because of layered mitigations, not because the model is good.
 
@@ -49,6 +71,17 @@ When the model fails a task, the **first** question is "which layer should catch
 4. **`temp=0.0` is mandatory.** No exceptions. The `neo-llm-bench` t=0.7 swing is 10 pp on HumanEval; it will surface as fixture flakiness here too.
 5. **`llama-server` is a singleton.** `/reset` clears the conversation, not the server. Don't add `restart-on-reset` — cold-start latency kills iteration.
 6. **No async, no tokio.** `ureq` is the HTTP client. If you need parallelism for a future feature, the right answer is a separate worker thread, not a runtime.
+
+## Bench / replay bins
+
+| Bin | Purpose |
+|---|---|
+| `bench-run` | Drive `micro-mind` as a subprocess against every fixture in `bench/tasks/*.toml`, write per-rep JSONL traces + `summary.json`. Refuses fixtures whose prompt could short-circuit the REPL on stdin. Needs a working llama-server. |
+| `bench-summarize` | Aggregate one or more JSONL traces into a text or markdown table (tools, tokens, wall_ms, stop). |
+| `bench-replay` | Validate a trace against a fixture *without* running the model — the CI gate. Schema-only mode is also supported. |
+| `bench-compare` | Diff a candidate `summary.json` against a baseline; exits 1 on outcome regression, 2 on soft regression (latency/tokens beyond `--wall-pct` / `--tokens-pct`). |
+
+As of schema v2, the `stop` event carries `final_answer`, so `bench-replay` can fully validate `expect.must_contain` from a trace alone. Pre-v2 traces (no `schema_v` field on `session_start`) still fail-closed on that predicate unless bench-run's stdout capture fills it. See `obs/schema.md` for the version policy.
 
 ## Tool surface decisions
 
@@ -93,6 +126,8 @@ Don't, by default. Ask the user whether an existing tool can be extended instead
 - **Model emits absolute paths for relative ones.** `qwen25-1.5b-instruct` emitted `/src/` when it meant `src/`. The original `safe_path` rejected this cleanly, but the model didn't retry with the corrected form — it gave up. Harness now strips a single leading `/` if the absolute interpretation falls outside the cwd. (`src/tools/fs_utils.rs::safe_path` 2026-05-14)
 - **The model will not retry on its own.** Failure-memory injection ("do not repeat the same call") is necessary but insufficient. If a tool fails, the model frequently just apologizes and stops. Harness-level accommodations (like the leading-slash fix) are stronger than coaching hints, because they remove the failure entirely.
 - **8 KB hard output cap matters.** A single 40 KB `read_file` poisons the rest of the turn at 8192 ctx. The tool layer caps before the agent loop sees the result.
+- **Length truncation is recoverable, but only as a turn boundary.** When llama-server reports `finish_reason="length"` we don't dispatch the model's truncated tool_calls (they may be incomplete) — we break with `StopReason::Length` and push a "be more concise" system note into the conversation so the *next* user turn nudges the model toward shorter output. (`src/agent/mod.rs` 2026-05-15)
+- **Bench fixtures are aspirations, not ground truth.** The committed `2026-05-15-main` baseline has 3/9 reps passing. Failures (`01-read-readme` over the token cap, `03-decline-irrelevant` over-calls and overshoots) are real model behaviour, captured to ratchet against. Don't loosen fixture predicates to make baselines green — improve the harness or the model context.
 
 ## Memory
 
