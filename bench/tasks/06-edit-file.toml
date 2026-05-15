@@ -1,0 +1,42 @@
+# Bench fixture format — see bench/README.md for the schema reference.
+#
+# Exercises `edit_file` on a seeded file. The file lives in a per-rep
+# tempdir (`cwd_isolated = true`) and is created from `seed_files`
+# before bench-run invokes micro-mind. The model must:
+#   1. read_file (to satisfy read-before-write)
+#   2. edit_file the unique snippet to the requested replacement
+#   3. optionally verify with another read_file
+#   4. produce a final answer
+#
+# `write_file` is forbidden — a model that overwrites the file wholesale
+# instead of using edit_file has routed wrong (and would also wipe other
+# content silently in a real-world setting).
+
+id = "06-edit-file"
+description = "Two-step edit_file: read a seeded file, then change a unique substring."
+prompt = "Read story.txt in the current directory. Then use edit_file to change the phrase 'lazy dog' to 'sleepy cat' — pass exactly those strings to old_string and new_string. Do not rewrite the whole file."
+cwd_isolated = true
+
+[[seed_files]]
+path = "story.txt"
+content = "The quick brown fox jumps over the lazy dog.\n"
+
+[expect]
+stop_reason = "FinalAnswer"
+
+# Minimum: read_file + edit_file. Cap at 5 to allow a verify-read + headroom.
+min_tool_calls = 2
+max_tool_calls = 5
+
+# Must use edit_file. Bash is out of scope; write_file would defeat the
+# point of the test (overwriting instead of editing).
+must_call_any_of = ["edit_file"]
+must_not_call = ["bash", "write_file"]
+
+# Latency / cost budget. Edit tasks are small.
+max_wall_ms = 30000
+# Architectural floor at temp=0, measured 2026-05-15: 2507 across 3 reps
+# (deterministic). Model does read_file → edit_file → final answer in two
+# turns; no verify-read needed because the model trusts the edit_file ok=true.
+# 3200 gives ~700 tokens of headroom for a future verify-read regression.
+max_total_tokens = 3200

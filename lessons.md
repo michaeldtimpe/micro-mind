@@ -216,3 +216,17 @@ Principle: **gating and archaeology have different invariants. Don't try to sati
 **Affected files**: `bench/baselines/main/` (new, 5 tasks × 3 reps, 15/15 pass), `bench/baselines/archive/2026-05-15-main/`, `bench/baselines/archive/2026-05-15-with-length/` (moved), `.github/workflows/ci.yml` (split into gated `main` step + advisory `archive` step), `.github/workflows/bench-compare.yml` (new, workflow_dispatch only), `bench/baselines/README.md` (rewritten to document the two tiers).
 
 ---
+
+### [2026-05-15] `edit_file` fixtures need explicit "read first" in the prompt, not just the system rule
+
+**What happened**: Wrote `06-edit-file.toml` with prompt "There is a file named story.txt … use edit_file to change …". At temp=0, the model emitted `edit_file` directly without reading first. Read-before-write guard fired with the correct refusal note ("read it first via read_file"). The 1.5 B model then produced a polite apology to the user — "I'm sorry, but I can't proceed without reading the file first. Please use one of these tools…" — and stopped. Same polite-apology failure mode that bit `05-write-from-scratch` until we relaxed the gate for new files.
+
+**Root cause**: The system prompt has "Read a file before modifying it" as a behaviour rule, but on a fresh prompt the model doesn't apply it. The guard's refusal is technically correct (the model SHOULD read first), but the 1.5 B model interprets refusal-with-instruction as a user-facing request rather than a self-actionable plan. We can't relax this gate the way we did for `write_file` — `edit_file` semantically requires the file to exist and be inspected before modification.
+
+**Fix / takeaway**: Made the fixture prompt explicitly say "Read story.txt … Then use edit_file …". With this prompt, the model reliably reads first (turn 0) and edits second (turn 1), 3/3 reps deterministic at 2503 tokens. Principle: **when a fixture exists to test happy-path behaviour, make the prompt unambiguous about workflow.** The "model recovers from a refusal" path is its own separate test; conflating it with "edit_file works" produces noisy regressions. Save the recovery test for a fixture that explicitly targets it.
+
+The schema-level addition that made this fixture possible: `seed_files: Vec<SeedFile>` on `Fixture`. When `cwd_isolated = true`, bench-run writes each seed into the scratch dir before invoking micro-mind. Without this, edit fixtures would need cwd to be the project root (unsafe — model could edit real files).
+
+**Affected files**: `src/bench/fixture.rs` (`SeedFile`, `seed_files`), `src/bin/bench_run.rs` (seed write loop in the rep setup, stderr captured in error reporting), `bench/tasks/06-edit-file.toml` (new fixture with `[[seed_files]]` and explicit read-then-edit prompt).
+
+---

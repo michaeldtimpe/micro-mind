@@ -159,6 +159,15 @@ fn main() -> Result<()> {
                 let _ = std::fs::remove_dir_all(&s);
                 std::fs::create_dir_all(&s)
                     .with_context(|| format!("create scratch dir {}", s.display()))?;
+                for seed in &fx.seed_files {
+                    let seed_path = s.join(&seed.path);
+                    if let Some(parent) = seed_path.parent() {
+                        std::fs::create_dir_all(parent)
+                            .with_context(|| format!("create seed parent {}", parent.display()))?;
+                    }
+                    std::fs::write(&seed_path, &seed.content)
+                        .with_context(|| format!("write seed {}", seed_path.display()))?;
+                }
                 (s.clone(), Some(s))
             } else {
                 (cwd.clone(), None)
@@ -349,6 +358,7 @@ fn run_one(
 
     let output = child.wait_with_output()?;
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
 
     // Move the one JSONL file produced into the expected trace path.
     let mut found = None;
@@ -362,7 +372,7 @@ fn run_one(
     if let Some(src) = found {
         std::fs::rename(&src, expected_trace).ok();
     } else {
-        anyhow::bail!("no JSONL produced (subprocess output:\n{stdout})");
+        anyhow::bail!("no JSONL produced\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}");
     }
     let _ = std::fs::remove_dir(&tmp_rec);
     Ok(stdout)

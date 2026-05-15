@@ -2,7 +2,7 @@
 
 A Claude Code-style interactive development REPL powered by `qwen25-1.5b-instruct` via `llama-server`. Sister project to [`michaeldtimpe/luxe`](https://github.com/michaeldtimpe/luxe) (MLX-only, 35 B MoE) and [`michaeldtimpe/neo-llm-bench`](https://github.com/michaeldtimpe/neo-llm-bench) (the bake-off that picked this model).
 
-> **Status:** v1 + observability + harness-ratcheted bench. End-to-end smoke 5/5 across the canonical workflows. 112/112 unit tests passing. Release binary 2.6 MB stripped. Schema v2 JSONL traces with `final_answer` for offline replay validation. Four bench binaries, five committed fixtures (`bench/tasks/*.toml`). Canonical baseline `bench/baselines/main/` runs 5 tasks × 3 reps, **15/15 pass deterministically** — CI gates on this. Two older baselines preserved under `bench/baselines/archive/` for historical reference (advisory replay only). See `lessons.md` for the cold-read guard story and the read-before-write differentiation for write_file.
+> **Status:** v1 + observability + harness-ratcheted bench. End-to-end smoke 5/5 across the canonical workflows. 112/112 unit tests passing. Release binary 2.6 MB stripped. Schema v2 JSONL traces with `final_answer` for offline replay validation. Four bench binaries, six committed fixtures (`bench/tasks/*.toml` — read, list, decline, length-truncate, write-new, edit-existing). Canonical baseline `bench/baselines/main/` runs 6 tasks × 3 reps, **18/18 pass deterministically** — CI gates on this. Two older baselines preserved under `bench/baselines/archive/` for historical reference (advisory replay only). See `lessons.md` for the cold-read guard story and the read-before-write differentiation for write_file.
 
 ## Why this exists
 

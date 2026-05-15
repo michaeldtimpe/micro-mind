@@ -57,6 +57,12 @@ mutating tools (`write_file`, `edit_file`) so reps don't leak state and
 the project root stays clean. `bench-run` cleans the scratch dir on
 success; keeps it on failure for inspection.
 
+Fixtures can also declare `[[seed_files]]` entries (`path` + `content`).
+Each is written into the scratch dir before `micro-mind` starts. Only
+honored when `cwd_isolated = true`. Use this for `edit_file` tasks where
+the file must exist before the model reads-and-edits it (see
+`bench/tasks/06-edit-file.toml`).
+
 ## Architecture: layered survival primitives
 
 The 1.5 B model can do **one** competent tool hop and decline irrelevant requests. It cannot reliably plan, recover from failure, or track state across many turns. Every architectural choice trades model capability for harness capability.

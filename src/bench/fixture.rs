@@ -21,6 +21,19 @@ pub struct Fixture {
     /// accumulates scratch files.
     #[serde(default)]
     pub cwd_isolated: bool,
+    /// Files to seed into the scratch dir before invoking `micro-mind`.
+    /// Only honored when `cwd_isolated = true`. Use for `edit_file` fixtures
+    /// (the file must exist before the model can read-then-edit it).
+    #[serde(default)]
+    pub seed_files: Vec<SeedFile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedFile {
+    /// Path relative to the scratch dir.
+    pub path: String,
+    /// File contents written verbatim.
+    pub content: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
