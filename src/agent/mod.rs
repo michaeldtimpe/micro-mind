@@ -9,10 +9,12 @@ use anyhow::Result;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Instant;
 
 use crate::config;
 use crate::llm::client::LlmClient;
-use crate::llm::types::ChatMessage;
+use crate::llm::types::{ChatMessage, Usage};
+use crate::obs::{Event, RecorderHandle};
 use crate::repl::render;
 use crate::tools::cache::ToolCache;
 use crate::tools::{ToolCallResult, ToolDef, dispatch};
@@ -27,6 +29,18 @@ pub enum StopReason {
     Error(String),
 }
 
+impl StopReason {
+    fn label(&self) -> String {
+        match self {
+            StopReason::FinalAnswer => "FinalAnswer".into(),
+            StopReason::TurnCap => "TurnCap".into(),
+            StopReason::WritePressure => "WritePressure".into(),
+            StopReason::Dedup => "Dedup".into(),
+            StopReason::Error(e) => format!("Error: {e}"),
+        }
+    }
+}
+
 /// Per-conversation state. Persists across `run_turn` calls until /reset.
 pub struct Session {
     pub client: LlmClient,
@@ -36,11 +50,19 @@ pub struct Session {
     pub cache: ToolCache,
     pub last_calls: Vec<ToolCallResult>,
     pub last_stop: Option<StopReason>,
+    pub last_usage: Option<Usage>,
     pub cwd: PathBuf,
+    pub recorder: RecorderHandle,
 }
 
 impl Session {
-    pub fn new(client: LlmClient, tools: Vec<ToolDef>, cwd: PathBuf, system_prompt: String) -> Self {
+    pub fn new(
+        client: LlmClient,
+        tools: Vec<ToolDef>,
+        cwd: PathBuf,
+        system_prompt: String,
+        recorder: RecorderHandle,
+    ) -> Self {
         let tools_by_name = tools
             .iter()
             .map(|t| (t.name.clone(), t.clone()))
@@ -53,8 +75,23 @@ impl Session {
             cache: ToolCache::new(),
             last_calls: Vec::new(),
             last_stop: None,
+            last_usage: None,
             cwd,
+            recorder,
         }
+    }
+
+    /// Convenience constructor for tests / call sites that don't need a recorder.
+    #[cfg(test)]
+    pub fn new_no_recorder(
+        client: LlmClient,
+        tools: Vec<ToolDef>,
+        cwd: PathBuf,
+        system_prompt: String,
+    ) -> Self {
+        use crate::obs::NoopRecorder;
+        use std::sync::Arc;
+        Self::new(client, tools, cwd, system_prompt, Arc::new(NoopRecorder))
     }
 
     /// Reset everything except the system prompt — used by /reset.
@@ -67,6 +104,7 @@ impl Session {
         self.cache = ToolCache::new();
         self.last_calls.clear();
         self.last_stop = None;
+        self.last_usage = None;
     }
 
     pub fn pressure(&self) -> f32 {
@@ -82,11 +120,17 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
     let mut dedup = guards::SemanticDedup::default();
     let mut reads = guards::ReadTracker::new();
     let mut write_pressure = guards::WritePressure::new();
-    let mut turns = 0usize;
+    let mut turns = 0u32;
+    let turn_start = Instant::now();
 
     loop {
-        if turns >= config::MAX_TURNS {
+        if turns as usize >= config::MAX_TURNS {
             state.last_stop = Some(StopReason::TurnCap);
+            state.recorder.record(Event::Guard {
+                turn: turns,
+                kind: "turn_cap".into(),
+                detail: None,
+            });
             render::guard("turn cap");
             break;
         }
@@ -96,14 +140,50 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
             state.messages = context::maybe_elide(&state.messages);
         }
 
-        let resp = match state.client.chat(&state.messages, &state.tools) {
-            Ok(m) => m,
+        state.recorder.record(Event::ChatRequest {
+            turn: turns,
+            n_messages: state.messages.len(),
+            n_tools: state.tools.len(),
+        });
+        let chat_started = Instant::now();
+        let outcome = match state.client.chat(&state.messages, &state.tools) {
+            Ok(o) => o,
             Err(e) => {
-                state.last_stop = Some(StopReason::Error(e.to_string()));
+                let err_str = e.to_string();
+                state.recorder.record(Event::ChatResponse {
+                    turn: turns,
+                    wall_ms: chat_started.elapsed().as_millis() as u64,
+                    finish_reason: None,
+                    native_tool_calls: 0,
+                    recovered_tool_calls: 0,
+                    prompt_tokens: None,
+                    completion_tokens: None,
+                    total_tokens: None,
+                    error: Some(err_str.clone()),
+                });
+                state.last_stop = Some(StopReason::Error(err_str));
                 render::error(&format!("chat request failed: {e}"));
                 break;
             }
         };
+
+        let resp = outcome.message;
+        let chat_ms = chat_started.elapsed().as_millis() as u64;
+
+        state.recorder.record(Event::ChatResponse {
+            turn: turns,
+            wall_ms: chat_ms,
+            finish_reason: outcome.finish_reason.clone(),
+            native_tool_calls: outcome.native_tool_calls,
+            recovered_tool_calls: outcome.recovered_tool_calls,
+            prompt_tokens: outcome.usage.as_ref().map(|u| u.prompt_tokens),
+            completion_tokens: outcome.usage.as_ref().map(|u| u.completion_tokens),
+            total_tokens: outcome.usage.as_ref().map(|u| u.total_tokens),
+            error: None,
+        });
+        if outcome.usage.is_some() {
+            state.last_usage = outcome.usage;
+        }
 
         // Push the assistant turn verbatim — including any recovered tool_calls.
         state.messages.push(resp.clone());
@@ -123,6 +203,11 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
             // Guard: semantic dedup.
             if dedup.record_and_check(&tc.function.name, &args) {
                 let note = guards::dedup_system_note();
+                state.recorder.record(Event::Guard {
+                    turn: turns,
+                    kind: "dedup".into(),
+                    detail: Some(tc.function.name.clone()),
+                });
                 render::guard(&format!("dedup → {}", tc.function.name));
                 state
                     .messages
@@ -136,6 +221,11 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
                 let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
                 if !path.is_empty() && !reads.has_seen(path) {
                     let note = guards::read_before_write_note(path);
+                    state.recorder.record(Event::Guard {
+                        turn: turns,
+                        kind: "read_before_write".into(),
+                        detail: Some(path.to_string()),
+                    });
                     render::guard(&format!("read-before-write → {}", path));
                     state
                         .messages
@@ -145,6 +235,12 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
             }
 
             // Dispatch.
+            state.recorder.record(Event::ToolCall {
+                turn: turns,
+                name: tc.function.name.clone(),
+                arguments: args.clone(),
+                tool_call_id: tc.id.clone(),
+            });
             render::tool_call_start(&tc.function.name, &args);
             let mut call = dispatch(
                 &tc.function.name,
@@ -165,6 +261,17 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
                 &coached_body,
             ));
 
+            state.recorder.record(Event::ToolResult {
+                turn: turns,
+                name: call.name.clone(),
+                tool_call_id: call.id.clone(),
+                ok: call.is_ok(),
+                wall_ms: call.wall_ms,
+                bytes_out: call.bytes_out,
+                cached: call.cached,
+                error: call.error.clone(),
+            });
+
             // Semantic compression as a system note alongside the raw result.
             if let Some(summary) = compress::summarize(&call) {
                 state.messages.push(ChatMessage::system(format!("Tool summary: {summary}")));
@@ -183,8 +290,18 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
             // Write-pressure tracking.
             if write_pressure.observe(&call.name, call.is_ok(), call.bytes_out) {
                 state.last_stop = Some(StopReason::WritePressure);
+                state.recorder.record(Event::Guard {
+                    turn: turns,
+                    kind: "write_pressure".into(),
+                    detail: None,
+                });
                 render::guard("write-pressure");
                 state.last_calls.push(call);
+                state.recorder.record(Event::Stop {
+                    turn: turns,
+                    reason: "WritePressure".into(),
+                    wall_ms: turn_start.elapsed().as_millis() as u64,
+                });
                 return Ok(());
             }
 
@@ -197,6 +314,14 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
         }
 
         turns += 1;
+    }
+
+    if let Some(reason) = &state.last_stop {
+        state.recorder.record(Event::Stop {
+            turn: turns,
+            reason: reason.label(),
+            wall_ms: turn_start.elapsed().as_millis() as u64,
+        });
     }
 
     Ok(())

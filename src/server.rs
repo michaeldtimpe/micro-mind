@@ -38,9 +38,11 @@ impl ServerHandle {
             return Ok(Self { url: default_url, child: None });
         }
 
-        // 3. Spawn.
-        let bin = std::env::var("MICROMIND_LLAMA_SERVER")
-            .unwrap_or_else(|_| DEFAULT_LLAMA_SERVER_PATH.to_string());
+        // 3. Spawn. Resolve binary in priority order:
+        //    a. MICROMIND_LLAMA_SERVER env var (explicit override).
+        //    b. `llama-server` on PATH.
+        //    c. DEFAULT_LLAMA_SERVER_PATH (developer machine fallback).
+        let bin = resolve_llama_server_bin();
         let model_path = std::env::var("MICROMIND_MODEL_PATH")
             .ok()
             .map(std::path::PathBuf::from)
@@ -49,7 +51,8 @@ impl ServerHandle {
         if !std::path::Path::new(&bin).exists() {
             anyhow::bail!(
                 "llama-server not found at {bin}. \
-                 Set MICROMIND_LLAMA_SERVER, or run llama-server yourself and set LLAMA_SERVER_URL."
+                 Set MICROMIND_LLAMA_SERVER, put llama-server on PATH, \
+                 or run llama-server yourself and set LLAMA_SERVER_URL."
             );
         }
         if !model_path.exists() {
@@ -111,6 +114,69 @@ impl Drop for ServerHandle {
             let _ = child.kill();
             let _ = child.wait();
         }
+    }
+}
+
+/// Resolve the `llama-server` binary, in priority order:
+///   1. `MICROMIND_LLAMA_SERVER` env var (explicit override — used verbatim).
+///   2. `llama-server` on `PATH` (preferred for CI / packaged installs).
+///   3. `DEFAULT_LLAMA_SERVER_PATH` (developer machine fallback).
+///
+/// Returns the candidate path as a `String`. Existence is checked by the caller
+/// so we can produce a single, actionable error message.
+fn resolve_llama_server_bin() -> String {
+    if let Ok(v) = std::env::var("MICROMIND_LLAMA_SERVER") {
+        let v = v.trim();
+        if !v.is_empty() {
+            return v.to_string();
+        }
+    }
+    if let Some(found) = find_on_path("llama-server") {
+        return found;
+    }
+    DEFAULT_LLAMA_SERVER_PATH.to_string()
+}
+
+/// Minimal PATH search — no extra dependency. Returns the first match that exists
+/// as a regular file in any PATH directory.
+fn find_on_path(name: &str) -> Option<String> {
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        let candidate = dir.join(name);
+        if candidate.is_file() {
+            return Some(candidate.to_string_lossy().into_owned());
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_prefers_env_var() {
+        // SAFETY: tests run single-threaded by default per env-mutating tests; the value
+        // here is restored at the end. If multiple env-tests are added, gate with a mutex.
+        let prev = std::env::var("MICROMIND_LLAMA_SERVER").ok();
+        unsafe { std::env::set_var("MICROMIND_LLAMA_SERVER", "/explicit/override"); }
+        assert_eq!(resolve_llama_server_bin(), "/explicit/override");
+        match prev {
+            Some(v) => unsafe { std::env::set_var("MICROMIND_LLAMA_SERVER", v) },
+            None => unsafe { std::env::remove_var("MICROMIND_LLAMA_SERVER") },
+        }
+    }
+
+    #[test]
+    fn find_on_path_locates_common_binary() {
+        // `sh` is on PATH in every Unix CI env we ship to.
+        let r = find_on_path("sh");
+        assert!(r.is_some(), "expected to find sh on PATH");
+    }
+
+    #[test]
+    fn find_on_path_returns_none_for_garbage() {
+        assert!(find_on_path("definitely-not-a-real-binary-xyzzy").is_none());
     }
 }
 

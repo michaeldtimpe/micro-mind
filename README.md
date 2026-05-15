@@ -99,6 +99,7 @@ sampling: temperature=0.0  top_p=1.0  repeat_penalty=1.1  seed=42  max_tokens=20
 micro-mind                                # attach/spawn, then REPL
 micro-mind -C <dir>                       # operate inside <dir> instead of $PWD
 micro-mind --no-spawn                     # error if no LLAMA_SERVER_URL — never spawn
+micro-mind --record <dir>                 # append-only JSONL telemetry (see obs/schema.md)
 ```
 
 REPL commands:

@@ -5,8 +5,21 @@ use std::time::Duration;
 use crate::config;
 use crate::llm::types::{
     ChatMessage, ChatRequest, ChatResponse, FunctionCall, ToolCall, ToolDefInner, ToolDefWire,
+    Usage,
 };
 use crate::tools::ToolDef;
+
+/// Outcome of a single chat round-trip. `native_tool_calls` is the count of
+/// tool_calls returned by the server; recovered tool_calls (from prose) are
+/// already merged into `message.tool_calls` and counted separately.
+#[derive(Debug, Clone)]
+pub struct ChatOutcome {
+    pub message: ChatMessage,
+    pub usage: Option<Usage>,
+    pub finish_reason: Option<String>,
+    pub native_tool_calls: usize,
+    pub recovered_tool_calls: usize,
+}
 
 pub struct LlmClient {
     pub base_url: String,
@@ -26,7 +39,7 @@ impl LlmClient {
         }
     }
 
-    pub fn chat(&self, messages: &[ChatMessage], tools: &[ToolDef]) -> Result<ChatMessage> {
+    pub fn chat(&self, messages: &[ChatMessage], tools: &[ToolDef]) -> Result<ChatOutcome> {
         let wire_tools: Vec<ToolDefWire> = tools
             .iter()
             .map(|t| ToolDefWire {
@@ -61,12 +74,16 @@ impl LlmClient {
             .into_json()
             .context("decode chat response")?;
 
-        let mut msg = resp
+        let usage = resp.usage.clone();
+        let choice = resp
             .choices
             .into_iter()
             .next()
-            .context("no choices in chat response")?
-            .message;
+            .context("no choices in chat response")?;
+        let finish_reason = choice.finish_reason.clone();
+        let mut msg = choice.message;
+        let native_tool_calls = msg.tool_calls.len();
+        let mut recovered_tool_calls = 0usize;
 
         // Text-recovery fallback: if no native tool_calls but the content
         // contains a parseable tool call, promote it. Belt-and-braces for
@@ -78,12 +95,19 @@ impl LlmClient {
                     // Strip the recovered fragments out of the visible content.
                     let stripped = strip_recovered(text);
                     msg.content = if stripped.trim().is_empty() { None } else { Some(stripped) };
+                    recovered_tool_calls = recovered.len();
                     msg.tool_calls = recovered;
                 }
             }
         }
 
-        Ok(msg)
+        Ok(ChatOutcome {
+            message: msg,
+            usage,
+            finish_reason,
+            native_tool_calls,
+            recovered_tool_calls,
+        })
     }
 }
 

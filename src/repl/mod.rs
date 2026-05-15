@@ -175,6 +175,13 @@ fn print_explain(s: &Session) {
         Some(r) => println!("last stop reason: {:?}", r),
         None => println!("last stop reason: (none yet)"),
     }
+    match &s.last_usage {
+        Some(u) => println!(
+            "last usage: prompt={} completion={} total={}",
+            u.prompt_tokens, u.completion_tokens, u.total_tokens
+        ),
+        None => println!("last usage: (not reported)"),
+    }
     if s.last_calls.is_empty() {
         println!("last tool calls: (none)");
     } else {

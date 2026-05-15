@@ -1,6 +1,7 @@
 mod agent;
 mod config;
 mod llm;
+mod obs;
 mod repl;
 mod server;
 mod tools;
@@ -8,10 +9,12 @@ mod tools;
 use anyhow::{Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::agent::Session;
 use crate::llm::client::LlmClient;
 use crate::llm::prompt::system_prompt;
+use crate::obs::{Event, JsonlRecorder, NoopRecorder, Recorder, RecorderHandle};
 use crate::server::ServerHandle;
 use crate::tools::ToolDef;
 
@@ -28,6 +31,10 @@ struct Cli {
     /// Don't spawn a server even if LLAMA_SERVER_URL is unset (will fail if no server is running).
     #[arg(long)]
     no_spawn: bool,
+
+    /// Append observability events to `<dir>/micro-mind-<ms>.jsonl`. See `obs/schema.md`.
+    #[arg(long, value_name = "DIR")]
+    record: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {
@@ -47,7 +54,28 @@ fn main() -> Result<()> {
     let client = LlmClient::new(server.url());
     let tools = build_tool_surface(&cwd);
     let prompt = system_prompt(&cwd);
-    let session = Session::new(client, tools, cwd, prompt);
+
+    let recorder: RecorderHandle = match &cli.record {
+        Some(dir) => match JsonlRecorder::open_in_dir(dir) {
+            Ok(r) => {
+                eprintln!("recording to {}", r.path.display());
+                let handle: RecorderHandle = Arc::new(r);
+                handle.record(Event::SessionStart {
+                    cwd: cwd.display().to_string(),
+                    model: client.model_name.clone(),
+                    tools: tools.iter().map(|t| t.name.clone()).collect(),
+                });
+                handle
+            }
+            Err(e) => {
+                eprintln!("(--record disabled: {e})");
+                Arc::new(NoopRecorder)
+            }
+        },
+        None => Arc::new(NoopRecorder),
+    };
+
+    let session = Session::new(client, tools, cwd, prompt, recorder);
 
     repl::run(session)?;
     // server is dropped here → SIGTERM if we own it.
