@@ -14,6 +14,13 @@ pub struct Fixture {
     pub description: String,
     pub prompt: String,
     pub expect: TaskExpect,
+    /// If true, `bench-run` spawns `micro-mind` in a fresh per-rep tempdir
+    /// instead of the project root. Required for fixtures that exercise
+    /// mutating tools (`write_file`, `edit_file`, mutating `bash`) — without
+    /// it, state from one rep leaks into the next and the project root
+    /// accumulates scratch files.
+    #[serde(default)]
+    pub cwd_isolated: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

@@ -14,13 +14,13 @@ jobs:
     name: cargo test + replay
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -46,18 +46,20 @@ jobs:
         run: cargo run --bin bench-replay -- --fixture bench/samples/sample-fixture.toml --trace bench/samples/sample-trace.jsonl
       - name: Summarize sample trace
         run: cargo run --bin bench-summarize -- --md bench/samples/sample-trace.jsonl
-      # Replay every committed baseline against the fixture set. Each
-      # subdirectory of bench/baselines/ is one historical run; replay
-      # validates that the committed JSONL traces still satisfy the current
-      # fixture predicates. Advisory for now — flip continue-on-error off
-      # once baselines are known stable across the team.
-      - name: Replay committed baselines (advisory)
+      # Canonical baseline replay — GATES the build. The committed traces
+      # under bench/baselines/main/ must satisfy every fixture predicate.
+      # When you re-capture (bench-run … --out bench/baselines/main), commit
+      # the new traces; if predicates regress, this step fails the build.
+      - name: Replay canonical baseline (gating)
+        run: cargo run --bin bench-replay -- --all bench/tasks --runs bench/baselines/main
+      # Archive baselines — historical reference; predicates may have moved
+      # since they were captured. Advisory only.
+      - name: Replay archive baselines (advisory)
         continue-on-error: true
         run: |
           shopt -s nullglob
           found_any=0
-          for runs_dir in bench/baselines/*/; do
-            # Skip dirs that don't have any .jsonl traces yet.
+          for runs_dir in bench/baselines/archive/*/; do
             jsonls=( "$runs_dir"*.jsonl )
             if [ ${#jsonls[@]} -eq 0 ]; then continue; fi
             found_any=1
@@ -66,5 +68,5 @@ jobs:
             echo "::endgroup::"
           done
           if [ "$found_any" = "0" ]; then
-            echo "(no baseline traces committed yet — skipping)"
+            echo "(no archive baselines committed)"
           fi

@@ -52,7 +52,7 @@ src/
    └─ bench_compare.rs    baseline vs candidate summary.json diff
 ```
 
-Tests live alongside each module (`#[cfg(test)] mod tests`). 106 unit tests as of the obs/bench drop (16 lib + 88 main bin + 2 bench-run).
+Tests live alongside each module (`#[cfg(test)] mod tests`). 112 unit tests as of the cold-read-guard drop (16 lib + 94 main bin + 2 bench-run).
 
 ## Runtime flow
 
@@ -105,8 +105,11 @@ loop (max MAX_TURNS=8):
     for each tool_call:
         if SemanticDedup.record_and_check(name, args) → record Guard{dedup}, inject system
                                                        note, set last_stop=Dedup, break
-        if write_file/edit_file && !ReadTracker.has_seen(path) → record Guard{read_before_write},
-                                                                  push refusal stub, continue
+        if (edit_file && !ReadTracker.has_seen(path))
+        OR (write_file && path exists on disk && !ReadTracker.has_seen(path))
+            → record Guard{read_before_write}, push tool-specific refusal stub, continue
+        if turn == 0 && read_file && path not in user_input
+            → record Guard{cold_read}, push refusal stub, continue
         record ToolCall event
         result = dispatch(name, args, …)              # tool layer enforces 8 KB cap
         coached = coach::coach(&result)               # prepend hint if error matches pattern
@@ -216,13 +219,26 @@ Then hash the canonical string. If the last `DEDUP_CONSECUTIVE_LIMIT=3` entries 
 
 #### Read-before-write (`guards.rs::ReadTracker`)
 
-Records `(canonicalize_path(arg.path))` for every successful `read_file` / `list_dir` / `list_files_recursive` / `grep`. On `write_file` / `edit_file`, checks:
+Records `(canonicalize_path(arg.path))` for every successful `read_file` / `list_dir` / `list_files_recursive` / `grep`. On a write/edit, checks:
 
 - exact match on the target path, **or**
 - match on any prefix (parent directory was listed), **or**
 - `.` was scanned (the model has surveyed the layout)
 
-If none match, the write is refused with a synthetic tool-failure stub. The model sees the refusal and typically reads the file next.
+Two variants of the gate by tool:
+
+- `edit_file`: always enforced. Editing content blind is the failure mode we care about.
+- `write_file`: only enforced when the target *already exists on disk*. Brand-new files skip the gate — the model isn't modifying anything, and forcing a "read it first" on a non-existent file makes the 1.5 B model interpret the refusal as "the file doesn't exist" and stop (the polite-apology failure documented 2026-05-14).
+
+When the gate fires, the refusal stub is also tool-specific: `edit_file` → "read it first via read_file"; `write_file` → "survey the directory first via list_dir". Different recovery paths.
+
+#### First-turn cold-read (`guards.rs::first_turn_cold_read_check`)
+
+Refuses `read_file` on turn 0 when the path (or its basename) doesn't appear in the user's input. Path `.` is exempt (project survey is always legit). `grep` / `list_dir` / `list_files_recursive` are exempt — they're legitimate exploration tools with generic search paths.
+
+Catches the BFCL "spurious tool call on self-answerable prompt" failure: on "What is 17 + 25?" the model emits `read_file("/dev/null")` to satisfy the tool channel, then answers correctly on turn 1. The cost is ~1100 wasted prompt tokens (the system prompt + tool defs re-echoed). Guard intercepts before dispatch; the model's deterministic chain still produces the correct answer on turn 1 from the refusal stub.
+
+Substring match is case-insensitive against the canonicalized path and its basename. False positives result in a recoverable refusal — the model gets the note and can retry with a path the user referenced or answer directly.
 
 #### Write-pressure exit (`guards.rs::WritePressure`)
 
@@ -340,7 +356,7 @@ Decisions deliberately made for v1:
 ```bash
 cargo build               # debug
 cargo build --release     # ~2.6 MB stripped (micro-mind), bench-* bins also produced
-cargo test                # 106 unit tests, no model required
+cargo test                # 112 unit tests, no model required
 cargo clippy -- -D warnings   # gating, zero-warning floor
 cargo fmt --all --check       # gating
 ```

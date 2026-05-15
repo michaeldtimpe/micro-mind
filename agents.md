@@ -82,8 +82,12 @@ loop (max MAX_TURNS=8 turns):
     for each tool_call:
         if SemanticDedup catches a 3-in-a-row loop
             → inject system note, stop=Dedup, break
-        if write_file/edit_file && target unread in this turn
+        if edit_file && target unread in this turn
             → return tool-failure stub ("read it first"), continue
+        if write_file && target exists on disk && unread in this turn
+            → return tool-failure stub ("survey first via list_dir"), continue
+        if turn == 0 && read_file && user input doesn't mention this path
+            → return tool-failure stub ("user didn't reference this"), continue
         record ToolCall event
         result = dispatch(name, args, …)
             (8 KB hard cap applied here)
@@ -112,7 +116,7 @@ Schema validation runs on every tool call before dispatch. A failed validation s
 
 ## Failure-mode coverage
 
-This single agent inherits all 18 named mitigations described in [`ARCHITECTURE.md §Layered survival primitives`](ARCHITECTURE.md). The agent has no concept of these layers — it just sees: a strict prompt, tools that reject bad input, an early stop if it loops or gets truncated, and synthetic system notes when something goes wrong. The agent's job is just to call the right tool with the right args.
+This single agent inherits all 20 named mitigations described in [`ARCHITECTURE.md §Layered survival primitives`](ARCHITECTURE.md). The agent has no concept of these layers — it just sees: a strict prompt, tools that reject bad input, an early stop if it loops or gets truncated, refusals if it reads paths the user didn't mention or modifies paths it hasn't surveyed, and synthetic system notes when something goes wrong. The agent's job is just to call the right tool with the right args.
 
 ## Why not multiple agents?
 

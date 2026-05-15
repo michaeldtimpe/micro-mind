@@ -45,9 +45,17 @@ bench/
 
 Observability is opt-in: pass `--record <dir>` to the main binary to append
 JSONL events for the session. CI is hermetic — it exercises `bench-replay`
-+ `bench-summarize` against `bench/samples/`, plus an advisory replay of
-every committed baseline. No llama-server required at any CI step.
-`clippy -D warnings` and `cargo fmt --check` both gate.
++ `bench-summarize` against `bench/samples/`, gates the build on the
+canonical baseline at `bench/baselines/main/`, and runs an advisory replay
+of every directory under `bench/baselines/archive/`. No llama-server
+required at any CI step. `clippy -D warnings` and `cargo fmt --check`
+both gate.
+
+`bench/tasks/` fixtures can set `cwd_isolated = true` to run in a fresh
+per-rep tempdir under `bench/runs/.scratch-<id>-rep<N>/`. Required for
+mutating tools (`write_file`, `edit_file`) so reps don't leak state and
+the project root stays clean. `bench-run` cleans the scratch dir on
+success; keeps it on failure for inspection.
 
 ## Architecture: layered survival primitives
 
@@ -60,6 +68,14 @@ Three layers of mitigation:
 3. **Agent loop layer** (`src/agent/`) — semantic dedup, read-before-write enforcement, write-pressure exit, length-truncation exit, failure-memory injection, write-aware context elision, per-tool semantic summarization, harness-level error coaching.
 
 Stop reasons emitted by `run_turn` (all surfaced in `obs/schema.md` and as fixture predicates): `FinalAnswer`, `TurnCap`, `WritePressure`, `Dedup`, `Length`, `Error: …`.
+
+Guards (in agent-loop order):
+1. `turn_cap` — hit `MAX_TURNS=8` without resolution.
+2. `dedup` — `SemanticDedup` fires (same normalized call 3 times in a row).
+3. `read_before_write` — `write_file`/`edit_file` against an unread path. `write_file` only fires when the target already exists on disk; brand-new files skip the gate.
+4. `cold_read` — `read_file` on turn 0 to a path the user's input didn't reference. Catches the BFCL "spurious tool call on self-answerable prompt" failure (e.g. `read_file(/dev/null)` on "What is 17+25?").
+5. `length` — server reported `finish_reason="length"`; assistant message structurally incomplete.
+6. `write_pressure` — successful write followed by `WRITE_PRESSURE_ZERO_BYTE_LIMIT=3` zero-byte non-write tool results.
 
 When the model fails a task, the **first** question is "which layer should catch this?" Not "is the model dumb?". The 5 smoke workflows passed because of layered mitigations, not because the model is good.
 
@@ -127,7 +143,8 @@ Don't, by default. Ask the user whether an existing tool can be extended instead
 - **The model will not retry on its own.** Failure-memory injection ("do not repeat the same call") is necessary but insufficient. If a tool fails, the model frequently just apologizes and stops. Harness-level accommodations (like the leading-slash fix) are stronger than coaching hints, because they remove the failure entirely.
 - **8 KB hard output cap matters.** A single 40 KB `read_file` poisons the rest of the turn at 8192 ctx. The tool layer caps before the agent loop sees the result.
 - **Length truncation is recoverable, but only as a turn boundary.** When llama-server reports `finish_reason="length"` we don't dispatch the model's truncated tool_calls (they may be incomplete) — we break with `StopReason::Length` and push a "be more concise" system note into the conversation so the *next* user turn nudges the model toward shorter output. (`src/agent/mod.rs` 2026-05-15)
-- **Bench fixtures are aspirations, not ground truth.** The committed `2026-05-15-main` baseline has 3/9 reps passing. Failures (`01-read-readme` over the token cap, `03-decline-irrelevant` over-calls and overshoots) are real model behaviour, captured to ratchet against. Don't loosen fixture predicates to make baselines green — improve the harness or the model context.
+- **Read-before-write for write_file must only fire on existing files.** First version gated `write_file` the same as `edit_file` — require a prior read. For brand-new files this is a contradiction: nothing exists to read. The 1.5 B model interpreted the refusal as "the file doesn't exist" and stopped, instead of surveying and retrying. Fix: `write_file` only triggers the gate when the target *already exists on disk*. `edit_file` keeps the strict check. (`src/agent/mod.rs` 2026-05-15)
+- **First-turn cold-read guard catches the BFCL irrelevance over-call.** On math prompts ("What is 17+25?"), the model emits a stub `read_file(/dev/null)` to satisfy the tool channel, then answers correctly. Cost: ~1100 wasted tokens on a 1024-cap fixture. New guard refuses `read_file` on turn 0 when the path (or basename) doesn't appear in the user's input. Path "." and `grep`/`list_dir` exempted. (`src/agent/guards.rs::first_turn_cold_read_check` 2026-05-15)
 
 ## Memory
 

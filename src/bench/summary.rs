@@ -273,6 +273,7 @@ mod tests {
             description: "".into(),
             prompt: "".into(),
             expect: Default::default(),
+            cwd_isolated: false,
         };
         let s = Summary::default();
         assert!(check_expectations(&fx, &s).is_empty());

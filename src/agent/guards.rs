@@ -201,11 +201,24 @@ pub fn dedup_system_note() -> String {
         .to_string()
 }
 
-/// Emit a synthetic tool-failure note that the model should see when a write
-/// is attempted before reading the target.
+/// Emit a synthetic tool-failure note that the model should see when a
+/// modify-existing call is attempted before reading the target.
 pub fn read_before_write_note(path: &str) -> String {
     format!(
         "Refused: read {} before modifying it. Call read_file (or list_dir / grep) on it first.",
+        path
+    )
+}
+
+/// Variant of the read-before-write note tailored for `write_file`, which
+/// is often used to create *new* files. The recovery path is "survey the
+/// directory first", not "read the file first" — the latter confuses small
+/// models, which interpret it as "the file doesn't exist" and give up.
+pub fn read_before_write_note_for_write(path: &str) -> String {
+    format!(
+        "Refused: cannot write {} without surveying the directory first. \
+         Call list_dir on the target directory (or list_files_recursive on \".\") \
+         to confirm what's there, then retry write_file.",
         path
     )
 }
@@ -217,6 +230,56 @@ pub fn length_truncation_note() -> String {
     "Your previous response was cut off at the max_tokens limit. Be more concise: \
      answer directly without restating the question, and prefer one tool call at a time."
         .to_string()
+}
+
+/// First-turn cold-read guard. Returns Some(refusal_note) if the model is
+/// calling `read_file` on turn 0 with a path the user did not mention in
+/// their input. Mitigates the BFCL "over-call on irrelevance" failure mode
+/// where small models reach for tools on self-answerable questions and
+/// invent stub paths like `/dev/null` to satisfy the tool channel.
+///
+/// Scope:
+/// - Turn 0 only. By turn 1+ the model has tool results in context and is
+///   reasoning more naturally; gating later turns would be disruptive.
+/// - Only `read_file`. Grep with a generic search path (`.`, `src`) is a
+///   legitimate exploration pattern and shouldn't be gated.
+/// - Skip when path is empty or `.` (project survey).
+///
+/// Matching is case-insensitive and substring-based against both the
+/// canonicalized path and its basename. False positives (model has a
+/// legitimate reason to read an unmentioned file) result in a recoverable
+/// refusal — the model gets the note and can retry with a path the user
+/// referenced, or answer directly.
+pub fn first_turn_cold_read_check(
+    turn: u32,
+    user_input: &str,
+    tool_name: &str,
+    args: &Value,
+) -> Option<String> {
+    if turn != 0 {
+        return None;
+    }
+    if tool_name != "read_file" {
+        return None;
+    }
+    let path = args.get("path").and_then(|v| v.as_str())?;
+    let canon = canonicalize_path(path);
+    if canon.is_empty() || canon == "." {
+        return None;
+    }
+    let basename = canon.rsplit('/').next().unwrap_or(&canon);
+    let lower = user_input.to_lowercase();
+    let canon_lower = canon.to_lowercase();
+    let basename_lower = basename.to_lowercase();
+    if lower.contains(&canon_lower) || lower.contains(&basename_lower) {
+        return None;
+    }
+    Some(format!(
+        "Refused: the user did not reference '{}' in their request. \
+         On the first turn, only call read_file on paths the user mentioned. \
+         Answer the user directly without reading.",
+        path
+    ))
 }
 
 /// Build the tool args representation we store in dedup keys. Useful in tests.
@@ -309,6 +372,79 @@ mod tests {
         assert!(!wp.observe("read_file", true, 0));
         assert!(!wp.observe("read_file", true, 0));
         assert!(wp.observe("read_file", true, 0));
+    }
+
+    #[test]
+    fn cold_read_fires_on_unmentioned_path_turn_zero() {
+        // The /dev/null shape from 03-decline-irrelevant: model invents a
+        // stub path on a math question.
+        let r = first_turn_cold_read_check(
+            0,
+            "What is 17 + 25?",
+            "read_file",
+            &json!({"path": "/dev/null"}),
+        );
+        assert!(r.is_some(), "expected refusal, got {:?}", r);
+    }
+
+    #[test]
+    fn cold_read_allows_path_mentioned_in_prompt() {
+        // 01-read-readme shape: user mentions README.md, model reads it.
+        let r = first_turn_cold_read_check(
+            0,
+            "Read README.md and tell me in one sentence what micro-mind is.",
+            "read_file",
+            &json!({"path": "/Users/x/proj/README.md"}),
+        );
+        assert!(r.is_none(), "expected pass-through, got {:?}", r);
+    }
+
+    #[test]
+    fn cold_read_allows_basename_match_case_insensitive() {
+        // Match must be case-insensitive.
+        let r = first_turn_cold_read_check(
+            0,
+            "tell me about cargo.toml",
+            "read_file",
+            &json!({"path": "Cargo.toml"}),
+        );
+        assert!(r.is_none());
+    }
+
+    #[test]
+    fn cold_read_only_applies_to_turn_zero() {
+        // Turn 1+ should pass through — the model has tool results in context.
+        let r = first_turn_cold_read_check(
+            1,
+            "What is 17 + 25?",
+            "read_file",
+            &json!({"path": "/dev/null"}),
+        );
+        assert!(r.is_none());
+    }
+
+    #[test]
+    fn cold_read_only_applies_to_read_file() {
+        // grep with a generic search path is legitimate exploration.
+        let r = first_turn_cold_read_check(
+            0,
+            "find all TODOs",
+            "grep",
+            &json!({"path": "src", "pattern": "TODO"}),
+        );
+        assert!(r.is_none());
+    }
+
+    #[test]
+    fn cold_read_allows_dot_path() {
+        // Project survey is always fine.
+        let r = first_turn_cold_read_check(
+            0,
+            "look around",
+            "read_file",
+            &json!({"path": "."}),
+        );
+        assert!(r.is_none());
     }
 
     #[test]

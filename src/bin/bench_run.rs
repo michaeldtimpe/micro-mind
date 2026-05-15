@@ -151,14 +151,34 @@ fn main() -> Result<()> {
             print!("  {} rep {}/{} ", fx.id, rep + 1, cli.reps);
             let _ = std::io::stdout().flush();
             let run_started = Instant::now();
+            // Isolated-cwd fixtures get a fresh per-rep scratch dir; everything
+            // else shares the project root cwd. The scratch dir lives under
+            // out_dir so it's gated by the same .gitignore (bench/runs/).
+            let (effective_cwd, scratch_dir): (PathBuf, Option<PathBuf>) = if fx.cwd_isolated {
+                let s = out_dir.join(format!(".scratch-{}-rep{rep}", fx.id));
+                let _ = std::fs::remove_dir_all(&s);
+                std::fs::create_dir_all(&s).with_context(|| {
+                    format!("create scratch dir {}", s.display())
+                })?;
+                (s.clone(), Some(s))
+            } else {
+                (cwd.clone(), None)
+            };
             let exec_result = run_one(
                 &cli.bin,
-                &cwd,
+                &effective_cwd,
                 &out_dir,
                 &fx.prompt,
                 cli.timeout,
                 &trace_path,
             );
+            // Clean up the scratch dir on success. On failure, keep it so the
+            // user can inspect what the model produced.
+            if let Some(s) = &scratch_dir
+                && exec_result.is_ok()
+            {
+                let _ = std::fs::remove_dir_all(s);
+            }
             let exec_ms = run_started.elapsed().as_millis();
             match &exec_result {
                 Ok(final_answer) => {

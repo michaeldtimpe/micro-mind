@@ -2,7 +2,7 @@
 
 A Claude Code-style interactive development REPL powered by `qwen25-1.5b-instruct` via `llama-server`. Sister project to [`michaeldtimpe/luxe`](https://github.com/michaeldtimpe/luxe) (MLX-only, 35 B MoE) and [`michaeldtimpe/neo-llm-bench`](https://github.com/michaeldtimpe/neo-llm-bench) (the bake-off that picked this model).
 
-> **Status:** v1 + observability. End-to-end smoke 5/5 across the canonical workflows (list, read, grep, decline-irrelevance, decline-math). 106/106 unit tests passing. Release binary 2.6 MB stripped. Schema v2 JSONL traces with `final_answer` for offline replay validation. Four bench binaries, four committed fixtures (`bench/tasks/*.toml`), two baselines: `2026-05-15-main` (3 tasks × 3 reps, 6/9 pass after fixture calibration) and `2026-05-15-with-length` (4 tasks × 3 reps, 9/12 pass — `03-decline-irrelevant` is an aspirational failure tracked deliberately). See `lessons.md` for the calibration story and the Length-stop design notes.
+> **Status:** v1 + observability + harness-ratcheted bench. End-to-end smoke 5/5 across the canonical workflows. 112/112 unit tests passing. Release binary 2.6 MB stripped. Schema v2 JSONL traces with `final_answer` for offline replay validation. Four bench binaries, five committed fixtures (`bench/tasks/*.toml`). Canonical baseline `bench/baselines/main/` runs 5 tasks × 3 reps, **15/15 pass deterministically** — CI gates on this. Two older baselines preserved under `bench/baselines/archive/` for historical reference (advisory replay only). See `lessons.md` for the cold-read guard story and the read-before-write differentiation for write_file.
 
 ## Why this exists
 
@@ -138,6 +138,8 @@ REPL commands:
 | Cold-starting `llama.cpp` on every reset | Singleton server, `/reset` clears conv only | `src/server.rs` |
 | Model emits absolute `/src/...` for relative `src/...` | Leading-slash fallback in `safe_path` | `src/tools/fs_utils.rs` |
 | `max_tokens` truncation produces incomplete tool_calls | Length-truncation exit + concision note | `src/agent/mod.rs`, `src/agent/guards.rs` |
+| Spurious `read_file(/dev/null)` on self-answerable prompts | First-turn cold-read guard (path must be mentioned by user) | `src/agent/guards.rs::first_turn_cold_read_check` |
+| `write_file` of new file blocked by read-before-write | Existence-check: gate only fires when target already on disk | `src/agent/mod.rs` |
 
 Discovered during live smoke, not from prior analysis: the leading-slash row.
 The model emitted `/src/` consistently; harness now strips the leading slash

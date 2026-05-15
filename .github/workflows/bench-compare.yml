@@ -1,0 +1,100 @@
+name: bench-compare
+
+# Manually-triggered workflow that diffs two committed bench summaries and
+# uploads a markdown + JSON delta report. The runner does NOT invoke the
+# model — both inputs must be summary.json files that were captured locally
+# (or by a separate workflow) and committed beforehand.
+#
+# Typical use:
+#   1. Capture a candidate run locally:
+#        bench-run --out bench/runs/candidate/
+#   2. Commit bench/runs/candidate/summary.json on a branch.
+#   3. Trigger this workflow with:
+#        baseline = bench/baselines/main/summary.json
+#        candidate = bench/runs/candidate/summary.json
+#   4. Download the artifact for the diff.
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseline:
+        description: 'Path to baseline summary.json (relative to repo root)'
+        required: true
+        default: 'bench/baselines/main/summary.json'
+      candidate:
+        description: 'Path to candidate summary.json (relative to repo root)'
+        required: true
+      wall_pct:
+        description: 'Wall-time regression threshold (%)'
+        required: false
+        default: '20'
+      tokens_pct:
+        description: 'Total-tokens regression threshold (%)'
+        required: false
+        default: '10'
+      strict:
+        description: 'Treat soft regressions (latency/tokens) as hard'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  compare:
+    name: bench-compare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - name: Verify inputs exist
+        run: |
+          test -f "${{ inputs.baseline }}" || { echo "baseline not found: ${{ inputs.baseline }}"; exit 1; }
+          test -f "${{ inputs.candidate }}" || { echo "candidate not found: ${{ inputs.candidate }}"; exit 1; }
+      - name: Build bench-compare
+        run: cargo build --release --bin bench-compare
+      - name: Run bench-compare
+        run: |
+          ARGS=()
+          ARGS+=(--baseline "${{ inputs.baseline }}")
+          ARGS+=(--candidate "${{ inputs.candidate }}")
+          ARGS+=(--wall-pct "${{ inputs.wall_pct }}")
+          ARGS+=(--tokens-pct "${{ inputs.tokens_pct }}")
+          ARGS+=(--md bench-delta.md)
+          ARGS+=(--json bench-delta.json)
+          if [ "${{ inputs.strict }}" = "true" ]; then
+            ARGS+=(--strict)
+          fi
+          # Allow soft regressions (exit 2) to surface as build success +
+          # warning; only hard regressions (exit 1) gate the workflow.
+          set +e
+          ./target/release/bench-compare "${ARGS[@]}"
+          rc=$?
+          set -e
+          if [ $rc -eq 1 ]; then
+            echo "::error::hard regression detected"
+            exit 1
+          elif [ $rc -eq 2 ]; then
+            echo "::warning::soft regression detected (latency / tokens)"
+          fi
+      - name: Upload delta report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-delta
+          path: |
+            bench-delta.md
+            bench-delta.json
+          if-no-files-found: warn

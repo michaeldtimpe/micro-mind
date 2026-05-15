@@ -230,11 +230,27 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
                 break;
             }
 
-            // Guard: read-before-write.
+            // Guard: read-before-write. For `edit_file`, always enforce —
+            // editing without a prior read is the failure mode we care about.
+            // For `write_file`, only enforce when the target ALREADY exists
+            // on disk; creating a brand-new file has nothing to read, and
+            // 1.5 B models interpret the refusal as "the file doesn't exist"
+            // and stop instead of surveying-and-retrying (lessons.md
+            // 2026-05-15 "polite apology" entry).
             if matches!(tc.function.name.as_str(), "write_file" | "edit_file") {
                 let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                if !path.is_empty() && !reads.has_seen(path) {
-                    let note = guards::read_before_write_note(path);
+                let needs_check = !path.is_empty()
+                    && !reads.has_seen(path)
+                    && (tc.function.name == "edit_file"
+                        || crate::tools::fs_utils::safe_path(&state.cwd, path)
+                            .map(|p| p.exists())
+                            .unwrap_or(false));
+                if needs_check {
+                    let note = if tc.function.name == "write_file" {
+                        guards::read_before_write_note_for_write(path)
+                    } else {
+                        guards::read_before_write_note(path)
+                    };
                     state.recorder.record(Event::Guard {
                         turn: turns,
                         kind: "read_before_write".into(),
@@ -246,6 +262,27 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
                         .push(ChatMessage::tool_result(&tc.id, &tc.function.name, &note));
                     continue;
                 }
+            }
+
+            // Guard: first-turn cold-read.
+            if let Some(note) =
+                guards::first_turn_cold_read_check(turns, user_input, &tc.function.name, &args)
+            {
+                let path = args
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                state.recorder.record(Event::Guard {
+                    turn: turns,
+                    kind: "cold_read".into(),
+                    detail: Some(path.clone()),
+                });
+                render::guard(&format!("cold-read → {}", path));
+                state
+                    .messages
+                    .push(ChatMessage::tool_result(&tc.id, &tc.function.name, &note));
+                continue;
             }
 
             // Dispatch.

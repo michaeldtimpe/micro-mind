@@ -1,0 +1,43 @@
+# Bench fixture format — see bench/README.md for the schema reference.
+#
+# Exercises the `write_file` happy path on a brand-new file. Runs in a
+# per-rep scratch directory (cwd_isolated = true) so the project root is
+# never polluted and reps don't see each other's state.
+#
+# The fixture asserts the *trace shape* (a successful write_file call ending
+# in FinalAnswer), not the file contents — verifying contents from the
+# trace alone isn't worth the schema complexity. If you need content
+# verification, write a Rust integration test that intercepts the bytes
+# instead.
+
+id = "05-write-from-scratch"
+description = "Single-hop write_file: create a new file with a known string."
+prompt = "Create a new file named hello.txt in the current directory containing exactly the text 'hello world' on one line. Nothing else."
+cwd_isolated = true
+
+[expect]
+# Successful create-and-stop, not a guard.
+stop_reason = "FinalAnswer"
+
+# At least one tool call; cap at 4 so a survey (list_dir) + write + verify
+# (read_file) round-trip is allowed but anything more is suspicious.
+min_tool_calls = 1
+max_tool_calls = 4
+
+# Must call write_file somewhere in the turn.
+must_call_any_of = ["write_file"]
+
+# These would indicate a routing failure or scope creep.
+must_not_call = ["edit_file", "bash"]
+
+# Latency / cost budget. Write tasks are fast; if it crosses 30 s something
+# else is going on (read-before-write loop, dedup retries).
+max_wall_ms = 30000
+# Architectural floor:
+#   - turn 0 prompt: ~1080
+#   - turn 0 assistant (often list_dir first to satisfy read-before-write): ~30
+#   - turn 0 list_dir tool result: ~50
+#   - turn 1 prompt + write_file call: ~1200 + ~50
+#   - turn 1 write_file tool result + final ack: ~50 + ~50
+# = ~2500. 3500 gives headroom for a verify-with-read_file round-trip.
+max_total_tokens = 3500
