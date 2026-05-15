@@ -3,3 +3,8 @@
 *.swp
 .idea/
 .vscode/
+
+# Per-run bench output (traces, summaries). Reference baselines under
+# bench/baselines/ are tracked; ad-hoc runs are not.
+/bench/runs/
+/obs/runs/

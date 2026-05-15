@@ -144,6 +144,56 @@ Discovered during live smoke, not from prior analysis: the last row. The model e
 
 Sub-agents, plan mode, MCP tools, tree-sitter symbols, BM25 search, the `glob` tool (routing entropy at 1.5 B), multi-file refactors, streaming output. See [`ARCHITECTURE.md §Non-goals`](ARCHITECTURE.md) for the rationale and the would-it-help analysis.
 
+## Observability & benchmarking
+
+`micro-mind` records every conversation it serves on demand. The schema is
+small, stable, and additive so downstream tooling stays useful as the
+harness evolves.
+
+```bash
+# Record this REPL session to JSONL.
+cargo run --release -- --record obs/runs
+
+# Drive the bench fixtures, write per-task traces + summary.json.
+cargo run --release --bin bench-run -- --reps 3 --out bench/runs/today
+
+# Aggregate any directory of traces into a markdown table.
+cargo run --bin bench-summarize -- --md bench/runs/today/
+
+# Validate traces against fixtures *without* the model (CI-friendly).
+cargo run --bin bench-replay -- --all bench/tasks --runs bench/runs/today
+
+# Diff against a checked-in baseline; non-zero exit on regression.
+cargo run --bin bench-compare -- \
+  --baseline bench/baselines/<date>.json \
+  --candidate bench/runs/today/summary.json
+```
+
+Documentation:
+- [`obs/schema.md`](obs/schema.md) — JSONL event schema (envelope, variants, `jq` recipes).
+- [`bench/README.md`](bench/README.md) — fixture format, the four bench binaries, CI integration.
+- [`bench/ablations.md`](bench/ablations.md) — sketched experiments (KV cache, tool surface, semantic summaries).
+- [`bench/baselines/README.md`](bench/baselines/README.md) — how baselines are captured, named, and retired.
+
+CI (`.github/workflows/ci.yml`) runs `cargo test`, `clippy`, `fmt`, and the
+schema/replay/summarize binaries against the checked-in sample trace.
+**It does not invoke the model** — that requires `llama-server` plus a GPU
+and is not deterministic across runners.
+
+## Publishing claims responsibly
+
+When citing numbers from this rig (latency, token count, pass rate):
+
+- Always include the commit hash, fixture set, and `--reps`.
+- Latency comes from a `--release` build with a warmed `llama-server` (one
+  throwaway prompt before measurement). Debug builds are noise.
+- Pass-rate numbers are over the fixture set — they reflect what *we
+  chose to test*, not "the model's accuracy." Don't extrapolate to BFCL
+  / HumanEval / etc. without re-benching there directly.
+- `temperature=0.0, seed=42` are pinned. If you change them, say so —
+  the lead from `neo-llm-bench` (2026-05-14) doesn't survive
+  `temperature=0.7`.
+
 ## Documentation
 
 - [`README.md`](README.md) — this file
@@ -151,6 +201,8 @@ Sub-agents, plan mode, MCP tools, tree-sitter symbols, BM25 search, the `glob` t
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — module map, runtime flow, mitigations detail
 - [`agents.md`](agents.md) — the single-agent spec (system prompt, tool surface, loop)
 - [`lessons.md`](lessons.md) — running log of mistakes and hard-won insights
+- [`obs/schema.md`](obs/schema.md) — recorded-event schema
+- [`bench/README.md`](bench/README.md) — benchmarking workflow
 
 ## License
 
