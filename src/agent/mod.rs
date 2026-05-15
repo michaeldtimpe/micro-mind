@@ -14,10 +14,10 @@ use std::time::Instant;
 use crate::config;
 use crate::llm::client::LlmClient;
 use crate::llm::types::{ChatMessage, Usage};
-use crate::obs::{Event, RecorderHandle};
 use crate::repl::render;
 use crate::tools::cache::ToolCache;
 use crate::tools::{ToolCallResult, ToolDef, dispatch};
+use micro_mind::obs::{Event, RecorderHandle};
 
 /// Reason the loop terminated, for /explain.
 #[derive(Debug, Clone)]
@@ -63,10 +63,7 @@ impl Session {
         system_prompt: String,
         recorder: RecorderHandle,
     ) -> Self {
-        let tools_by_name = tools
-            .iter()
-            .map(|t| (t.name.clone(), t.clone()))
-            .collect();
+        let tools_by_name = tools.iter().map(|t| (t.name.clone(), t.clone())).collect();
         Self {
             client,
             tools,
@@ -89,7 +86,7 @@ impl Session {
         cwd: PathBuf,
         system_prompt: String,
     ) -> Self {
-        use crate::obs::NoopRecorder;
+        use micro_mind::obs::NoopRecorder;
         use std::sync::Arc;
         Self::new(client, tools, cwd, system_prompt, Arc::new(NoopRecorder))
     }
@@ -274,7 +271,9 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
 
             // Semantic compression as a system note alongside the raw result.
             if let Some(summary) = compress::summarize(&call) {
-                state.messages.push(ChatMessage::system(format!("Tool summary: {summary}")));
+                state
+                    .messages
+                    .push(ChatMessage::system(format!("Tool summary: {summary}")));
             }
 
             // Failure-memory injection.

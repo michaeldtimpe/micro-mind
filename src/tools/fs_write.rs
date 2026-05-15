@@ -41,8 +41,14 @@ pub fn write_file(cwd: PathBuf) -> ToolDef {
         "Overwrite a file atomically. Use edit_file for partial changes; this replaces the whole file.",
         params,
         move |args| -> Result<String, String> {
-            let path_str = args.get("path").and_then(|v| v.as_str()).ok_or("path required")?;
-            let content = args.get("content").and_then(|v| v.as_str()).ok_or("content required")?;
+            let path_str = args
+                .get("path")
+                .and_then(|v| v.as_str())
+                .ok_or("path required")?;
+            let content = args
+                .get("content")
+                .and_then(|v| v.as_str())
+                .ok_or("content required")?;
 
             // Honesty guard #1: placeholder text.
             for marker in PLACEHOLDER_MARKERS {
@@ -63,7 +69,8 @@ pub fn write_file(cwd: PathBuf) -> ToolDef {
                     return Err(format!(
                         "Refused: overwriting a {} B file with {} B looks like an accidental wipe. \
                          If you really mean this, use edit_file to remove specific content instead.",
-                        old_size, content.len()
+                        old_size,
+                        content.len()
                     ));
                 }
             }
@@ -71,7 +78,11 @@ pub fn write_file(cwd: PathBuf) -> ToolDef {
             atomic_write(&abs, content.as_bytes())
                 .map_err(|e| format!("Atomic write failed: {e}"))?;
 
-            Ok(format!("write_file ok: {} ({} bytes)", path_str, content.len()))
+            Ok(format!(
+                "write_file ok: {} ({} bytes)",
+                path_str,
+                content.len()
+            ))
         },
     )
 }
@@ -93,10 +104,22 @@ pub fn edit_file(cwd: PathBuf) -> ToolDef {
         "Replace `old` with `new` in `path`. Match is fuzzy on whitespace/line-endings. Defaults to a single unique match.",
         params,
         move |args| -> Result<String, String> {
-            let path_str = args.get("path").and_then(|v| v.as_str()).ok_or("path required")?;
-            let old = args.get("old").and_then(|v| v.as_str()).ok_or("old required")?;
-            let new = args.get("new").and_then(|v| v.as_str()).ok_or("new required")?;
-            let replace_all = args.get("replace_all").and_then(|v| v.as_bool()).unwrap_or(false);
+            let path_str = args
+                .get("path")
+                .and_then(|v| v.as_str())
+                .ok_or("path required")?;
+            let old = args
+                .get("old")
+                .and_then(|v| v.as_str())
+                .ok_or("old required")?;
+            let new = args
+                .get("new")
+                .and_then(|v| v.as_str())
+                .ok_or("new required")?;
+            let replace_all = args
+                .get("replace_all")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
 
             if old.is_empty() {
                 return Err("`old` cannot be empty.".into());
@@ -189,16 +212,15 @@ fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
         .unwrap_or(0);
     let fname = format!(
         ".{}.tmp.{}.{}",
-        path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+        path.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default(),
         pid,
         nano
     );
     let tmp = parent.join(fname);
 
-    let mut f: File = OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .open(&tmp)?;
+    let mut f: File = OpenOptions::new().create_new(true).write(true).open(&tmp)?;
     f.write_all(bytes)?;
     f.sync_all()?;
     drop(f);
@@ -233,7 +255,9 @@ mod tests {
     fn write_file_rejects_placeholder() {
         let dir = tdir();
         let tool = write_file(dir.clone());
-        let err = (tool.function)(&json!({"path": "a.txt", "content": "fn x() { // TODO: fill in\n}"})).unwrap_err();
+        let err =
+            (tool.function)(&json!({"path": "a.txt", "content": "fn x() { // TODO: fill in\n}"}))
+                .unwrap_err();
         assert!(err.contains("placeholder"));
     }
 
@@ -250,13 +274,18 @@ mod tests {
     #[test]
     fn edit_file_unique_match() {
         let dir = tdir();
-        std::fs::write(dir.join("a.rs"), "fn main() {\n    let x = 1;\n    let y = 2;\n}").unwrap();
+        std::fs::write(
+            dir.join("a.rs"),
+            "fn main() {\n    let x = 1;\n    let y = 2;\n}",
+        )
+        .unwrap();
         let tool = edit_file(dir.clone());
         let out = (tool.function)(&json!({
             "path": "a.rs",
             "old": "let x = 1;",
             "new": "let x = 42;"
-        })).unwrap();
+        }))
+        .unwrap();
         assert!(out.contains("ok"));
         let after = std::fs::read_to_string(dir.join("a.rs")).unwrap();
         assert!(after.contains("let x = 42;"));
@@ -272,7 +301,8 @@ mod tests {
             "path": "a.txt",
             "old": "line2\n",
             "new": "LINE2\n"
-        })).unwrap();
+        }))
+        .unwrap();
         assert!(out.contains("ok"), "got: {out}");
         let after = std::fs::read_to_string(dir.join("a.txt")).unwrap();
         assert!(after.contains("LINE2"));
@@ -287,7 +317,8 @@ mod tests {
             "path": "a.txt",
             "old": "foo",
             "new": "bar"
-        })).unwrap_err();
+        }))
+        .unwrap_err();
         assert!(err.contains("matched"));
         assert!(err.contains("replace_all"));
     }
@@ -302,9 +333,13 @@ mod tests {
             "old": "foo",
             "new": "bar",
             "replace_all": true
-        })).unwrap();
+        }))
+        .unwrap();
         assert!(out.contains("3 replacements"));
-        assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "bar\nbar\nbar");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("a.txt")).unwrap(),
+            "bar\nbar\nbar"
+        );
     }
 
     #[test]
@@ -316,7 +351,8 @@ mod tests {
             "path": "a.txt",
             "old": "zzz",
             "new": "xxx"
-        })).unwrap_err();
+        }))
+        .unwrap_err();
         assert!(err.contains("could not find"));
     }
 

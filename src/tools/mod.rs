@@ -77,7 +77,10 @@ impl ToolCallResult {
 /// Lightweight: checks `required` and primitive types only — same shape as luxe's `validate_args`.
 pub fn validate_args(params: &Value, args: &Value) -> Option<String> {
     let Some(args_obj) = args.as_object() else {
-        return Some(format!("Arguments must be a JSON object, got {}", type_name(args)));
+        return Some(format!(
+            "Arguments must be a JSON object, got {}",
+            type_name(args)
+        ));
     };
 
     if let Some(required) = params.get("required").and_then(|v| v.as_array()) {
@@ -211,7 +214,6 @@ pub fn dispatch(
     tc
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,7 +274,7 @@ mod tests {
     #[test]
     fn validate_args_non_object_args() {
         let p = json!({});
-        assert!(validate_args(&p, &json!([1,2,3])).is_some());
+        assert!(validate_args(&p, &json!([1, 2, 3])).is_some());
     }
 
     #[test]

@@ -3,6 +3,9 @@ name = "micro-mind"
 version = "0.1.0"
 edition = "2024"
 description = "Claude Code clone powered by qwen25-1.5b-instruct via llama-server"
+# Auto-discovery would create extra `bench_run` etc. bins alongside our
+# hyphenated explicit ones; turn it off and declare every bin below.
+autobins = false
 
 [dependencies]
 ureq = { version = "2", features = ["json"] }
@@ -17,10 +20,33 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 nix = { version = "0.29", features = ["signal"] }
 colored = "2"
+toml = "0.8"
 
 [features]
 default = []
 live = []
+
+# All binaries are declared explicitly because `autobins = false` is on
+# (we want hyphenated names that don't match the underscored filenames).
+[[bin]]
+name = "micro-mind"
+path = "src/main.rs"
+
+[[bin]]
+name = "bench-run"
+path = "src/bin/bench_run.rs"
+
+[[bin]]
+name = "bench-summarize"
+path = "src/bin/bench_summarize.rs"
+
+[[bin]]
+name = "bench-replay"
+path = "src/bin/bench_replay.rs"
+
+[[bin]]
+name = "bench-compare"
+path = "src/bin/bench_compare.rs"
 
 [profile.release]
 opt-level = "z"

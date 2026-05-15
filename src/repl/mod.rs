@@ -106,7 +106,10 @@ fn handle_command(cmd: &str, s: &mut Session) -> bool {
             match s.last_calls.last() {
                 Some(call) => {
                     println!("--- last tool: {} ---", call.name);
-                    println!("args: {}", serde_json::to_string(&call.arguments).unwrap_or_default());
+                    println!(
+                        "args: {}",
+                        serde_json::to_string(&call.arguments).unwrap_or_default()
+                    );
                     if let Some(err) = &call.error {
                         println!("ERROR:\n{err}");
                     } else {
@@ -123,7 +126,12 @@ fn handle_command(cmd: &str, s: &mut Session) -> bool {
                 println!("usage: /tool N   (N=1..{})", s.last_calls.len());
             } else {
                 let call = &s.last_calls[n - 1];
-                println!("--- tool {} of {}: {} ---", n, s.last_calls.len(), call.name);
+                println!(
+                    "--- tool {} of {}: {} ---",
+                    n,
+                    s.last_calls.len(),
+                    call.name
+                );
                 if let Some(err) = &call.error {
                     println!("ERROR:\n{err}");
                 } else {
@@ -170,7 +178,14 @@ fn print_explain(s: &Session) {
         s.cache.entry_count()
     );
     println!("cwd: {}", s.cwd.display());
-    println!("tools loaded: {}", s.tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(", "));
+    println!(
+        "tools loaded: {}",
+        s.tools
+            .iter()
+            .map(|t| t.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
     match &s.last_stop {
         Some(r) => println!("last stop reason: {:?}", r),
         None => println!("last stop reason: (none yet)"),

@@ -2,7 +2,7 @@
 //!
 //! See `obs/schema.md` for the event schema.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs::{File, OpenOptions, create_dir_all};
 use std::io::{BufWriter, Write};
@@ -15,7 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Field naming follows the OpenAI / llama-server vocabulary where possible
 /// (`prompt_tokens`, `completion_tokens`, `finish_reason`). Internal-only
 /// fields use snake_case.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum Event {
     /// Outgoing chat request — captured before the HTTP POST.
@@ -116,10 +116,7 @@ impl JsonlRecorder {
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
         let path = dir.join(format!("micro-mind-{ts}.jsonl"));
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)?;
+        let file = OpenOptions::new().create(true).append(true).open(&path)?;
         Ok(Self {
             inner: Mutex::new(JsonlInner {
                 writer: Some(BufWriter::new(file)),
@@ -164,9 +161,16 @@ impl Recorder for JsonlRecorder {
         };
         line.push('\n');
 
-        let Ok(mut guard) = self.inner.lock() else { return };
-        let Some(writer) = guard.writer.as_mut() else { return };
-        if let Err(e) = writer.write_all(line.as_bytes()).and_then(|_| writer.flush()) {
+        let Ok(mut guard) = self.inner.lock() else {
+            return;
+        };
+        let Some(writer) = guard.writer.as_mut() else {
+            return;
+        };
+        if let Err(e) = writer
+            .write_all(line.as_bytes())
+            .and_then(|_| writer.flush())
+        {
             if !guard.warned {
                 eprintln!("(recorder: write failed, further events dropped: {e})");
                 guard.warned = true;
@@ -183,7 +187,10 @@ mod tests {
 
     fn tmpfile(name: &str) -> PathBuf {
         let mut p = std::env::temp_dir();
-        let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         p.push(format!("micro-mind-rec-{ts}-{name}.jsonl"));
         p
     }
@@ -203,7 +210,11 @@ mod tests {
     fn jsonl_recorder_writes_one_line_per_event() {
         let path = tmpfile("basic");
         let r = JsonlRecorder::open_path(&path).expect("open");
-        r.record(Event::ChatRequest { turn: 1, n_messages: 3, n_tools: 7 });
+        r.record(Event::ChatRequest {
+            turn: 1,
+            n_messages: 3,
+            n_tools: 7,
+        });
         r.record(Event::ToolResult {
             turn: 1,
             name: "read_file".into(),
@@ -231,7 +242,11 @@ mod tests {
     fn jsonl_recorder_envelope_has_ts_ms() {
         let path = tmpfile("ts");
         let r = JsonlRecorder::open_path(&path).expect("open");
-        r.record(Event::Stop { turn: 2, reason: "FinalAnswer".into(), wall_ms: 100 });
+        r.record(Event::Stop {
+            turn: 2,
+            reason: "FinalAnswer".into(),
+            wall_ms: 100,
+        });
         drop(r);
         let body = read_to_string(&path).unwrap();
         let v: serde_json::Value = serde_json::from_str(body.trim()).unwrap();

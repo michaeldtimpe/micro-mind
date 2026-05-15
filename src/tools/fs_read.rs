@@ -86,7 +86,8 @@ pub fn list_dir(cwd: PathBuf) -> ToolDef {
         move |args| -> Result<String, String> {
             let path_str = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
             let abs = safe_path(&cwd, path_str)?;
-            let meta = fs::metadata(&abs).map_err(|e| format!("Cannot stat {}: {}", abs.display(), e))?;
+            let meta =
+                fs::metadata(&abs).map_err(|e| format!("Cannot stat {}: {}", abs.display(), e))?;
             if !meta.is_dir() {
                 return Err(format!("Not a directory: {}", path_str));
             }
@@ -101,7 +102,10 @@ pub fn list_dir(cwd: PathBuf) -> ToolDef {
                 .collect();
             entries.sort_by(|a, b| a.0.cmp(&b.0));
             let total = entries.len();
-            let capped = entries.into_iter().take(config::LIST_DIR_CAP).collect::<Vec<_>>();
+            let capped = entries
+                .into_iter()
+                .take(config::LIST_DIR_CAP)
+                .collect::<Vec<_>>();
             let mut out = String::new();
             for (name, is_dir) in &capped {
                 if *is_dir {
@@ -149,7 +153,10 @@ pub fn list_files_recursive(cwd: PathBuf) -> ToolDef {
             }
             let entries = walk_gitignore(&abs, depth);
             let total = entries.len();
-            let capped: Vec<_> = entries.into_iter().take(config::LIST_RECURSIVE_CAP).collect();
+            let capped: Vec<_> = entries
+                .into_iter()
+                .take(config::LIST_RECURSIVE_CAP)
+                .collect();
             let mut out = String::new();
             for path in &capped {
                 let rel = path.strip_prefix(&cwd).unwrap_or(path);
@@ -185,7 +192,10 @@ pub fn grep(cwd: PathBuf) -> ToolDef {
         "Search files for a regex pattern. Returns file:line:match.",
         params,
         move |args| -> Result<String, String> {
-            let pattern = args.get("pattern").and_then(|v| v.as_str()).ok_or("pattern required")?;
+            let pattern = args
+                .get("pattern")
+                .and_then(|v| v.as_str())
+                .ok_or("pattern required")?;
             let path_str = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
             let max_matches = args
                 .get("max_matches")
@@ -207,7 +217,9 @@ pub fn grep(cwd: PathBuf) -> ToolDef {
             let mut matches: Vec<String> = Vec::new();
             'outer: for f in &files {
                 let Ok(bytes) = fs::read(f) else { continue };
-                let Ok(text) = std::str::from_utf8(&bytes) else { continue };
+                let Ok(text) = std::str::from_utf8(&bytes) else {
+                    continue;
+                };
                 let rel = f.strip_prefix(&cwd).unwrap_or(f);
                 for (i, line) in text.lines().enumerate() {
                     if re.is_match(line) {

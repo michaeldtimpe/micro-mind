@@ -55,8 +55,16 @@ impl LlmClient {
         let req = ChatRequest {
             model: &self.model_name,
             messages,
-            tools: if wire_tools.is_empty() { None } else { Some(&wire_tools) },
-            tool_choice: if wire_tools.is_empty() { None } else { Some("auto") },
+            tools: if wire_tools.is_empty() {
+                None
+            } else {
+                Some(&wire_tools)
+            },
+            tool_choice: if wire_tools.is_empty() {
+                None
+            } else {
+                Some("auto")
+            },
             temperature: config::TEMPERATURE,
             top_p: config::TOP_P,
             repeat_penalty: config::REPEAT_PENALTY,
@@ -64,7 +72,10 @@ impl LlmClient {
             max_tokens: config::MAX_TOKENS,
         };
 
-        let url = format!("{}/v1/chat/completions", self.base_url.trim_end_matches('/'));
+        let url = format!(
+            "{}/v1/chat/completions",
+            self.base_url.trim_end_matches('/')
+        );
         let resp: ChatResponse = self
             .agent
             .post(&url)
@@ -94,7 +105,11 @@ impl LlmClient {
                 if !recovered.is_empty() {
                     // Strip the recovered fragments out of the visible content.
                     let stripped = strip_recovered(text);
-                    msg.content = if stripped.trim().is_empty() { None } else { Some(stripped) };
+                    msg.content = if stripped.trim().is_empty() {
+                        None
+                    } else {
+                        Some(stripped)
+                    };
                     recovered_tool_calls = recovered.len();
                     msg.tool_calls = recovered;
                 }
@@ -126,7 +141,9 @@ pub fn recover_tool_calls_from_text(text: &str) -> Vec<ToolCall> {
     let mut cursor = 0;
     while let Some(start) = text[cursor..].find(open) {
         let abs_start = cursor + start + open.len();
-        let Some(rel_end) = text[abs_start..].find(close) else { break };
+        let Some(rel_end) = text[abs_start..].find(close) else {
+            break;
+        };
         let abs_end = abs_start + rel_end;
         let payload = text[abs_start..abs_end].trim();
         if let Some(tc) = parse_named_call(payload, &mut counter) {
@@ -151,7 +168,10 @@ pub fn recover_tool_calls_from_text(text: &str) -> Vec<ToolCall> {
 fn parse_named_call(s: &str, counter: &mut usize) -> Option<ToolCall> {
     let v: Value = serde_json::from_str(s).ok()?;
     let name = v.get("name")?.as_str()?.to_string();
-    let args = v.get("arguments").cloned().unwrap_or(Value::Object(Default::default()));
+    let args = v
+        .get("arguments")
+        .cloned()
+        .unwrap_or(Value::Object(Default::default()));
     let args_str = match args {
         Value::String(s) => s,
         other => serde_json::to_string(&other).ok()?,
@@ -160,7 +180,10 @@ fn parse_named_call(s: &str, counter: &mut usize) -> Option<ToolCall> {
     Some(ToolCall {
         id: format!("recovered_{}", counter),
         kind: "function".into(),
-        function: FunctionCall { name, arguments: args_str },
+        function: FunctionCall {
+            name,
+            arguments: args_str,
+        },
     })
 }
 
@@ -176,8 +199,11 @@ fn extract_first_balanced_json(text: &str) -> Option<&str> {
             continue;
         }
         if in_string {
-            if b == b'\\' { escape = true; }
-            else if b == b'"' { in_string = false; }
+            if b == b'\\' {
+                escape = true;
+            } else if b == b'"' {
+                in_string = false;
+            }
             continue;
         }
         match b {
@@ -199,8 +225,12 @@ fn strip_recovered(text: &str) -> String {
     let mut s = text.to_string();
     // Remove all <tool_call>...</tool_call> blocks.
     loop {
-        let Some(start) = s.find("<tool_call>") else { break };
-        let Some(end) = s[start..].find("</tool_call>") else { break };
+        let Some(start) = s.find("<tool_call>") else {
+            break;
+        };
+        let Some(end) = s[start..].find("</tool_call>") else {
+            break;
+        };
         let abs_end = start + end + "</tool_call>".len();
         s.replace_range(start..abs_end, "");
     }

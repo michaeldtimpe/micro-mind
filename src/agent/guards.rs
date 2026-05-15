@@ -118,7 +118,10 @@ impl ReadTracker {
     /// Record a successful read. We use the canonicalized path so the model
     /// can't dodge the gate by varying `./` / `//` etc.
     pub fn record_read(&mut self, name: &str, args: &Value) {
-        if !matches!(name, "read_file" | "list_dir" | "list_files_recursive" | "grep") {
+        if !matches!(
+            name,
+            "read_file" | "list_dir" | "list_files_recursive" | "grep"
+        ) {
             return;
         }
         if let Some(p) = args.get("path").and_then(|v| v.as_str()) {
@@ -133,7 +136,9 @@ impl ReadTracker {
         // of the target file before a write — but `list_files_recursive` of
         // the project root is a reasonable signal that the model has surveyed
         // the layout, so we also mark "." as seen in that case.
-        if name == "list_files_recursive" && (args.get("path").and_then(|v| v.as_str()).unwrap_or(".") == ".") {
+        if name == "list_files_recursive"
+            && (args.get("path").and_then(|v| v.as_str()).unwrap_or(".") == ".")
+        {
             self.seen.insert(".".to_string());
         }
     }

@@ -160,7 +160,10 @@ mod tests {
 
     #[test]
     fn bash_unrecognized_option_hint() {
-        let c = ok_call("bash", "$ grep -P TODO\nexit=2 time=10ms\n--- stderr ---\ngrep: unrecognized option: -P\n");
+        let c = ok_call(
+            "bash",
+            "$ grep -P TODO\nexit=2 time=10ms\n--- stderr ---\ngrep: unrecognized option: -P\n",
+        );
         let coached = coach(&c);
         assert!(coached.contains("Flag not supported"));
     }

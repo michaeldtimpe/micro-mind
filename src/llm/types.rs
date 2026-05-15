@@ -16,18 +16,46 @@ pub struct ChatMessage {
 
 impl ChatMessage {
     pub fn system(text: impl Into<String>) -> Self {
-        Self { role: "system".into(), content: Some(text.into()), name: None, tool_call_id: None, tool_calls: vec![] }
+        Self {
+            role: "system".into(),
+            content: Some(text.into()),
+            name: None,
+            tool_call_id: None,
+            tool_calls: vec![],
+        }
     }
     pub fn user(text: impl Into<String>) -> Self {
-        Self { role: "user".into(), content: Some(text.into()), name: None, tool_call_id: None, tool_calls: vec![] }
+        Self {
+            role: "user".into(),
+            content: Some(text.into()),
+            name: None,
+            tool_call_id: None,
+            tool_calls: vec![],
+        }
     }
     pub fn assistant_text(text: impl Into<String>) -> Self {
-        Self { role: "assistant".into(), content: Some(text.into()), name: None, tool_call_id: None, tool_calls: vec![] }
+        Self {
+            role: "assistant".into(),
+            content: Some(text.into()),
+            name: None,
+            tool_call_id: None,
+            tool_calls: vec![],
+        }
     }
     pub fn assistant_calls(content: Option<String>, calls: Vec<ToolCall>) -> Self {
-        Self { role: "assistant".into(), content, name: None, tool_call_id: None, tool_calls: calls }
+        Self {
+            role: "assistant".into(),
+            content,
+            name: None,
+            tool_call_id: None,
+            tool_calls: calls,
+        }
     }
-    pub fn tool_result(call_id: impl Into<String>, name: impl Into<String>, content: impl Into<String>) -> Self {
+    pub fn tool_result(
+        call_id: impl Into<String>,
+        name: impl Into<String>,
+        content: impl Into<String>,
+    ) -> Self {
         Self {
             role: "tool".into(),
             content: Some(content.into()),

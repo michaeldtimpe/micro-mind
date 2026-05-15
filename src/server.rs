@@ -35,7 +35,10 @@ impl ServerHandle {
         // 2. Try the default port first — maybe llama-server is already running.
         let default_url = format!("http://127.0.0.1:{}", DEFAULT_PORT);
         if wait_for_health(&default_url, Duration::from_secs(1)).is_ok() {
-            return Ok(Self { url: default_url, child: None });
+            return Ok(Self {
+                url: default_url,
+                child: None,
+            });
         }
 
         // 3. Spawn. Resolve binary in priority order:
@@ -64,29 +67,44 @@ impl ServerHandle {
 
         let child = Command::new(&bin)
             .args(&[
-                "-m", &model_path.to_string_lossy(),
-                "--ctx-size", &config::N_CTX.to_string(),
-                "--n-gpu-layers", &config::N_GPU_LAYERS.to_string(),
-                "--threads", &config::N_THREADS.to_string(),
-                "--batch-size", &config::N_BATCH.to_string(),
-                "--ubatch-size", &config::N_UBATCH.to_string(),
-                "--cache-type-k", "q8_0",
-                "--cache-type-v", "q8_0",
+                "-m",
+                &model_path.to_string_lossy(),
+                "--ctx-size",
+                &config::N_CTX.to_string(),
+                "--n-gpu-layers",
+                &config::N_GPU_LAYERS.to_string(),
+                "--threads",
+                &config::N_THREADS.to_string(),
+                "--batch-size",
+                &config::N_BATCH.to_string(),
+                "--ubatch-size",
+                &config::N_UBATCH.to_string(),
+                "--cache-type-k",
+                "q8_0",
+                "--cache-type-v",
+                "q8_0",
                 "--jinja",
-                "--port", &DEFAULT_PORT.to_string(),
+                "--port",
+                &DEFAULT_PORT.to_string(),
             ])
             .stdin(Stdio::null())
-            .stdout(Stdio::null())   // suppress noisy startup output
+            .stdout(Stdio::null()) // suppress noisy startup output
             .stderr(Stdio::null())
             .spawn()
             .with_context(|| format!("failed to spawn llama-server: {bin}"))?;
 
         let url = format!("http://127.0.0.1:{}", DEFAULT_PORT);
-        eprintln!("spawning llama-server (pid {}), waiting for /health …", child.id());
+        eprintln!(
+            "spawning llama-server (pid {}), waiting for /health …",
+            child.id()
+        );
         wait_for_health(&url, Duration::from_secs(60))
             .context("llama-server did not become healthy within 60s")?;
 
-        Ok(Self { url, child: Some(child) })
+        Ok(Self {
+            url,
+            child: Some(child),
+        })
     }
 
     pub fn url(&self) -> &str {
@@ -150,6 +168,24 @@ fn find_on_path(name: &str) -> Option<String> {
     None
 }
 
+fn wait_for_health(url: &str, timeout: Duration) -> Result<()> {
+    let deadline = Instant::now() + timeout;
+    let health_url = format!("{}/health", url.trim_end_matches('/'));
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_millis(500))
+        .build();
+    loop {
+        match agent.get(&health_url).call() {
+            Ok(resp) if resp.status() < 500 => return Ok(()),
+            _ => {}
+        }
+        if Instant::now() >= deadline {
+            anyhow::bail!("/health did not respond at {}", health_url);
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,7 +195,9 @@ mod tests {
         // SAFETY: tests run single-threaded by default per env-mutating tests; the value
         // here is restored at the end. If multiple env-tests are added, gate with a mutex.
         let prev = std::env::var("MICROMIND_LLAMA_SERVER").ok();
-        unsafe { std::env::set_var("MICROMIND_LLAMA_SERVER", "/explicit/override"); }
+        unsafe {
+            std::env::set_var("MICROMIND_LLAMA_SERVER", "/explicit/override");
+        }
         assert_eq!(resolve_llama_server_bin(), "/explicit/override");
         match prev {
             Some(v) => unsafe { std::env::set_var("MICROMIND_LLAMA_SERVER", v) },
@@ -177,23 +215,5 @@ mod tests {
     #[test]
     fn find_on_path_returns_none_for_garbage() {
         assert!(find_on_path("definitely-not-a-real-binary-xyzzy").is_none());
-    }
-}
-
-fn wait_for_health(url: &str, timeout: Duration) -> Result<()> {
-    let deadline = Instant::now() + timeout;
-    let health_url = format!("{}/health", url.trim_end_matches('/'));
-    let agent = ureq::AgentBuilder::new()
-        .timeout(Duration::from_millis(500))
-        .build();
-    loop {
-        match agent.get(&health_url).call() {
-            Ok(resp) if resp.status() < 500 => return Ok(()),
-            _ => {}
-        }
-        if Instant::now() >= deadline {
-            anyhow::bail!("/health did not respond at {}", health_url);
-        }
-        std::thread::sleep(Duration::from_millis(250));
     }
 }

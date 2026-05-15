@@ -117,7 +117,9 @@ pub fn fuzzy_find(text: &str, needle: &str) -> Option<FuzzyMatch> {
     // normalize_for_match performs only character-preserving edits per line
     // (it strips trailing whitespace per line and CRLF→LF). We rebuild a
     // mapping by walking both strings side-by-side.
-    let (start, _) = map_norm_to_orig(text, first_norm).ok_or_else(|| "map failure").ok()?;
+    let (start, _) = map_norm_to_orig(text, first_norm)
+        .ok_or_else(|| "map failure")
+        .ok()?;
     let needle_orig_len = match_length_in_orig(text, start, &needle_norm)?;
 
     Some(FuzzyMatch {
@@ -295,7 +297,7 @@ mod tests {
 
     #[test]
     fn fuzzy_find_handles_trailing_whitespace() {
-        let text = "fn foo() {  \n    body\n}";  // trailing spaces after `{`
+        let text = "fn foo() {  \n    body\n}"; // trailing spaces after `{`
         let needle = "fn foo() {\n    body";
         let m = fuzzy_find(text, needle).unwrap();
         let slice = &text[m.start..m.end];

@@ -42,7 +42,11 @@ fn summarize_read_file(call: &ToolCallResult) -> String {
     let lines = body.lines().count();
     let bytes = body.len();
     let extras = scan_signals(body);
-    let extras_part = if extras.is_empty() { String::new() } else { format!(", {}", extras.join(", ")) };
+    let extras_part = if extras.is_empty() {
+        String::new()
+    } else {
+        format!(", {}", extras.join(", "))
+    };
     format!(
         "read_file {} → {} lines, {} bytes{}{}",
         path,
@@ -59,7 +63,11 @@ fn summarize_list_dir(call: &ToolCallResult) -> String {
         .get("path")
         .and_then(|v| v.as_str())
         .unwrap_or(".");
-    let lines: Vec<&str> = call.result.lines().filter(|l| !l.starts_with('[')).collect();
+    let lines: Vec<&str> = call
+        .result
+        .lines()
+        .filter(|l| !l.starts_with('['))
+        .collect();
     let dirs = lines.iter().filter(|l| l.ends_with('/')).count();
     let files = lines.len() - dirs;
     format!("list_dir {} → {} files, {} dirs", path, files, dirs)
@@ -71,7 +79,11 @@ fn summarize_list_recursive(call: &ToolCallResult) -> String {
         .get("path")
         .and_then(|v| v.as_str())
         .unwrap_or(".");
-    let lines: Vec<&str> = call.result.lines().filter(|l| !l.starts_with('[')).collect();
+    let lines: Vec<&str> = call
+        .result
+        .lines()
+        .filter(|l| !l.starts_with('['))
+        .collect();
     let count = lines.len();
     let top_exts = top_extensions(&lines);
     let ext_part = if top_exts.is_empty() {
@@ -79,7 +91,10 @@ fn summarize_list_recursive(call: &ToolCallResult) -> String {
     } else {
         format!(", mostly {}", top_exts.join("/"))
     };
-    format!("list_files_recursive {} → {} entries{}", path, count, ext_part)
+    format!(
+        "list_files_recursive {} → {} entries{}",
+        path, count, ext_part
+    )
 }
 
 fn summarize_grep(call: &ToolCallResult) -> String {
@@ -101,10 +116,8 @@ fn summarize_grep(call: &ToolCallResult) -> String {
         .lines()
         .filter(|l| !l.starts_with('['))
         .collect();
-    let files: std::collections::HashSet<&str> = lines
-        .iter()
-        .filter_map(|l| l.split(':').next())
-        .collect();
+    let files: std::collections::HashSet<&str> =
+        lines.iter().filter_map(|l| l.split(':').next()).collect();
     format!(
         "grep /{}/ {} → {} matches in {} files",
         pattern,
@@ -131,7 +144,11 @@ fn summarize_bash(call: &ToolCallResult) -> String {
     }
     let status = if exit_code == 0 { "OK" } else { "FAIL" };
     let extras = bash_extras(&call.result);
-    let extras_part = if extras.is_empty() { String::new() } else { format!(", {}", extras.join("; ")) };
+    let extras_part = if extras.is_empty() {
+        String::new()
+    } else {
+        format!(", {}", extras.join("; "))
+    };
     format!(
         "bash `{}` → {} (exit={} {}){}",
         truncate_mid(cmd_line, 60),
@@ -152,7 +169,9 @@ fn bash_extras(out: &str) -> Vec<String> {
         }
         if line.contains("error[E") || line.contains("error:") {
             hits.push(line.trim().to_string());
-            if hits.len() >= 2 { break; }
+            if hits.len() >= 2 {
+                break;
+            }
         }
     }
     hits.into_iter().take(2).collect()
@@ -165,7 +184,14 @@ fn truncate_mid(s: &str, max: usize) -> String {
     let head = max / 2 - 1;
     let tail = max - head - 3;
     let head_slice: String = s.chars().take(head).collect();
-    let tail_slice: String = s.chars().rev().take(tail).collect::<String>().chars().rev().collect();
+    let tail_slice: String = s
+        .chars()
+        .rev()
+        .take(tail)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect();
     format!("{}...{}", head_slice, tail_slice)
 }
 
@@ -185,7 +211,11 @@ fn scan_signals(text: &str) -> Vec<String> {
     let mut fns = Vec::new();
     for line in head.lines() {
         let l = line.trim_start();
-        if l.starts_with("fn ") || l.starts_with("pub fn ") || l.starts_with("def ") || l.starts_with("function ") {
+        if l.starts_with("fn ")
+            || l.starts_with("pub fn ")
+            || l.starts_with("def ")
+            || l.starts_with("function ")
+        {
             if let Some(name) = extract_def_name(l) {
                 fns.push(name);
             }
@@ -203,7 +233,10 @@ fn scan_signals(text: &str) -> Vec<String> {
 fn extract_def_name(line: &str) -> Option<String> {
     for prefix in &["pub fn ", "fn ", "def ", "function "] {
         if let Some(rest) = line.strip_prefix(prefix) {
-            let name: String = rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
             if !name.is_empty() {
                 return Some(name);
             }

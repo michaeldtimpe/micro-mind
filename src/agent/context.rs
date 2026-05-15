@@ -41,11 +41,15 @@ fn is_durable_write_result(m: &ChatMessage) -> bool {
     if m.role != "tool" {
         return false;
     }
-    let Some(name) = m.name.as_deref() else { return false };
+    let Some(name) = m.name.as_deref() else {
+        return false;
+    };
     if name != "write_file" && name != "edit_file" {
         return false;
     }
-    let Some(content) = m.content.as_deref() else { return false };
+    let Some(content) = m.content.as_deref() else {
+        return false;
+    };
     // Success markers emitted by fs_write tools.
     content.starts_with("write_file ok") || content.starts_with("edit_file ok")
 }
@@ -77,10 +81,8 @@ pub fn elide_old_tool_results(
     }
 
     let keep_from = tool_indices.len() - keep_recent;
-    let to_elide: std::collections::HashSet<usize> = tool_indices[..keep_from]
-        .iter()
-        .copied()
-        .collect();
+    let to_elide: std::collections::HashSet<usize> =
+        tool_indices[..keep_from].iter().copied().collect();
 
     messages
         .iter()
@@ -132,10 +134,7 @@ mod tests {
 
     #[test]
     fn no_elision_below_threshold() {
-        let msgs = vec![
-            ChatMessage::user("hi"),
-            tool_msg("read_file", "small"),
-        ];
+        let msgs = vec![ChatMessage::user("hi"), tool_msg("read_file", "small")];
         let out = elide_old_tool_results(&msgs, 8192, 0.7, 4);
         assert_eq!(out.len(), msgs.len());
         assert_eq!(out[1].content.as_deref().unwrap(), "small");
@@ -150,9 +149,12 @@ mod tests {
         }
         let out = elide_old_tool_results(&msgs, 8192, 0.7, 4);
         // Last 4 tool messages preserved, first 6 elided.
-        let preserved: Vec<&ChatMessage> = out.iter().filter(|m| {
-            m.role == "tool" && !m.content.as_deref().unwrap_or("").starts_with("[elided")
-        }).collect();
+        let preserved: Vec<&ChatMessage> = out
+            .iter()
+            .filter(|m| {
+                m.role == "tool" && !m.content.as_deref().unwrap_or("").starts_with("[elided")
+            })
+            .collect();
         assert_eq!(preserved.len(), 4);
     }
 
@@ -167,8 +169,14 @@ mod tests {
         }
         let out = elide_old_tool_results(&msgs, 8192, 0.7, 4);
         // The write_file message must survive verbatim.
-        let write_msg = out.iter().find(|m| m.name.as_deref() == Some("write_file")).unwrap();
-        assert_eq!(write_msg.content.as_deref().unwrap(), "write_file ok: foo.rs (12 bytes)");
+        let write_msg = out
+            .iter()
+            .find(|m| m.name.as_deref() == Some("write_file"))
+            .unwrap();
+        assert_eq!(
+            write_msg.content.as_deref().unwrap(),
+            "write_file ok: foo.rs (12 bytes)"
+        );
     }
 
     #[test]
@@ -179,9 +187,12 @@ mod tests {
             msgs.push(tool_msg("grep", &format!("{i}-{big}")));
         }
         let out = elide_old_tool_results(&msgs, 8192, 0.7, 3);
-        let kept = out.iter().filter(|m| {
-            m.role == "tool" && !m.content.as_deref().unwrap_or("").starts_with("[elided")
-        }).count();
+        let kept = out
+            .iter()
+            .filter(|m| {
+                m.role == "tool" && !m.content.as_deref().unwrap_or("").starts_with("[elided")
+            })
+            .count();
         assert_eq!(kept, 3);
     }
 }

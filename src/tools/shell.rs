@@ -7,9 +7,8 @@ use crate::config;
 use crate::tools::ToolDef;
 
 const ALLOWLIST: &[&str] = &[
-    "ls", "cat", "head", "tail", "wc", "grep", "find", "git",
-    "cargo", "make", "python", "python3", "node", "npm", "pytest",
-    "rustc", "rustfmt", "echo", "true", "false", "pwd",
+    "ls", "cat", "head", "tail", "wc", "grep", "find", "git", "cargo", "make", "python", "python3",
+    "node", "npm", "pytest", "rustc", "rustfmt", "echo", "true", "false", "pwd",
 ];
 
 /// Tokens / substrings rejected anywhere in any argv element.

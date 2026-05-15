@@ -1,7 +1,6 @@
 mod agent;
 mod config;
 mod llm;
-mod obs;
 mod repl;
 mod server;
 mod tools;
@@ -11,10 +10,11 @@ use clap::Parser;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use micro_mind::obs::{Event, JsonlRecorder, NoopRecorder, Recorder as _, RecorderHandle};
+
 use crate::agent::Session;
 use crate::llm::client::LlmClient;
 use crate::llm::prompt::system_prompt;
-use crate::obs::{Event, JsonlRecorder, NoopRecorder, Recorder, RecorderHandle};
 use crate::server::ServerHandle;
 use crate::tools::ToolDef;
 
