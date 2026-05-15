@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: cargo test + replay
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - name: Format check
+        run: cargo fmt --all -- --check
+      # Clippy runs but does not gate — the existing codebase has known
+      # warnings we haven't cleaned up yet. The bench/replay/summarize
+      # paths are the gate for now; tighten clippy when the warning floor
+      # hits zero.
+      - name: Clippy (advisory)
+        run: cargo clippy --all-targets
+        continue-on-error: true
+      - name: Build
+        run: cargo build --all-targets
+      - name: Unit tests
+        run: cargo test --all-targets
+      - name: Schema check of sample trace
+        run: cargo run --bin bench-replay -- --trace bench/samples/sample-trace.jsonl --schema-only
+      - name: Replay sample trace against fixture
+        run: cargo run --bin bench-replay -- --fixture bench/samples/sample-fixture.toml --trace bench/samples/sample-trace.jsonl
+      - name: Summarize sample trace
+        run: cargo run --bin bench-summarize -- --md bench/samples/sample-trace.jsonl

@@ -1,0 +1,12 @@
+id = "sample-trace"
+description = "Reference trace shipped with the repo for CI / replay docs."
+prompt = "Read README.md and summarize it."
+
+[expect]
+stop_reason = "FinalAnswer"
+min_tool_calls = 1
+max_tool_calls = 3
+must_call_any_of = ["read_file"]
+must_not_call = ["write_file", "edit_file", "bash"]
+max_wall_ms = 5000
+max_total_tokens = 2000

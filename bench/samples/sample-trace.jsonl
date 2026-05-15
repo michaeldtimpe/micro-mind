@@ -1,0 +1,8 @@
+{"ts_ms": 1747312345000, "payload": {"event": "session_start", "cwd": "/tmp/x", "model": "qwen25-1.5b-instruct", "tools": ["read_file","grep","list_dir","list_files_recursive","write_file","edit_file","bash"]}}
+{"ts_ms": 1747312345010, "payload": {"event": "chat_request", "turn": 0, "n_messages": 2, "n_tools": 7}}
+{"ts_ms": 1747312345520, "payload": {"event": "chat_response", "turn": 0, "wall_ms": 510, "finish_reason": "tool_calls", "native_tool_calls": 1, "recovered_tool_calls": 0, "prompt_tokens": 312, "completion_tokens": 28, "total_tokens": 340, "error": null}}
+{"ts_ms": 1747312345525, "payload": {"event": "tool_call", "turn": 0, "name": "read_file", "arguments": {"path": "README.md", "offset": 0, "max_bytes": 4096}, "tool_call_id": "call_1"}}
+{"ts_ms": 1747312345535, "payload": {"event": "tool_result", "turn": 0, "name": "read_file", "tool_call_id": "call_1", "ok": true, "wall_ms": 9, "bytes_out": 4096, "cached": false, "error": null}}
+{"ts_ms": 1747312345540, "payload": {"event": "chat_request", "turn": 1, "n_messages": 4, "n_tools": 7}}
+{"ts_ms": 1747312346060, "payload": {"event": "chat_response", "turn": 1, "wall_ms": 520, "finish_reason": "stop", "native_tool_calls": 0, "recovered_tool_calls": 0, "prompt_tokens": 720, "completion_tokens": 42, "total_tokens": 762, "error": null}}
+{"ts_ms": 1747312346065, "payload": {"event": "stop", "turn": 1, "reason": "FinalAnswer", "wall_ms": 1055}}
