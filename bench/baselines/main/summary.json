@@ -1,6 +1,6 @@
 {
   "n_failures": 0,
-  "n_outcomes": 27,
+  "n_outcomes": 30,
   "outcomes": [
     {
       "failures": [],
@@ -10,8 +10,8 @@
         "cached_tool_calls": 0,
         "chat_errors": 0,
         "chat_round_trips": 2,
-        "completion_tokens": 119,
-        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ read_file path=\"/Users/mtimpe/Downloads/micro-mind/REA\"…\n  └ ok 0ms 8262 bytes\n\nmicro-mind is a Claude Code-style interactive development REPL powered by `qwen25-1.5b-instruct` via `llama-server`. It offers seven tool surfaces: read_file, list_dir, list_files_recursive, grep, write_file, edit_file, and bash. The model is designed to be single-capable at 1.5 B size, with a focus on minimum-RAM operation.\n\n",
+        "completion_tokens": 83,
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ read_file path=\"/Users/mtimpe/Downloads/micro-mind/REA\"…\n  └ ok 0ms 8262 bytes\n\nmicro-mind is a Claude Code-style interactive development REPL powered by `qwen25-1.5b-instruct` via `llama-server`. It supports reading files and executing commands within the specified directory or the current working directory.\n\n",
         "guard_fires": 0,
         "guards_by_kind": {},
         "native_tool_calls": 1,
@@ -23,8 +23,8 @@
           "read_file": 1
         },
         "tool_errors": 0,
-        "total_tokens": 4679,
-        "wall_ms": 1046
+        "total_tokens": 4643,
+        "wall_ms": 831
       },
       "trace_path": "bench/baselines/main/01-read-readme-rep0.jsonl"
     },
@@ -50,7 +50,7 @@
         },
         "tool_errors": 0,
         "total_tokens": 4643,
-        "wall_ms": 853
+        "wall_ms": 880
       },
       "trace_path": "bench/baselines/main/01-read-readme-rep1.jsonl"
     },
@@ -76,7 +76,7 @@
         },
         "tool_errors": 0,
         "total_tokens": 4643,
-        "wall_ms": 870
+        "wall_ms": 861
       },
       "trace_path": "bench/baselines/main/01-read-readme-rep2.jsonl"
     },
@@ -102,7 +102,7 @@
         },
         "tool_errors": 0,
         "total_tokens": 2558,
-        "wall_ms": 731
+        "wall_ms": 717
       },
       "trace_path": "bench/baselines/main/02-list-rust-files-rep0.jsonl"
     },
@@ -115,7 +115,7 @@
         "chat_errors": 0,
         "chat_round_trips": 2,
         "completion_tokens": 108,
-        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ list_files_recursive path=\"/Users/mtimpe/Downloads/micro-mind/src\"\n  └ ok 0ms 646 bytes\n\nThere are 38 Rust source files in the src directory. They include:\n\n- `bench`\n- `tools`\n- `llm`\n- `bin`\n- `config.rs`\n- `lib.rs`\n- `repl`\n- `agent`\n- `server.rs`\n- `obs`\n\nThese files span various subdirectories and modules within the src/ directory.\n\n",
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ list_files_recursive path=\"/Users/mtimpe/Downloads/micro-mind/src\"\n  └ ok 1ms 646 bytes\n\nThere are 38 Rust source files in the src directory. They include:\n\n- `bench`\n- `tools`\n- `llm`\n- `bin`\n- `config.rs`\n- `lib.rs`\n- `repl`\n- `agent`\n- `server.rs`\n- `obs`\n\nThese files span various subdirectories and modules within the src/ directory.\n\n",
         "guard_fires": 0,
         "guards_by_kind": {},
         "native_tool_calls": 1,
@@ -128,7 +128,7 @@
         },
         "tool_errors": 0,
         "total_tokens": 2558,
-        "wall_ms": 725
+        "wall_ms": 710
       },
       "trace_path": "bench/baselines/main/02-list-rust-files-rep1.jsonl"
     },
@@ -154,7 +154,7 @@
         },
         "tool_errors": 0,
         "total_tokens": 2558,
-        "wall_ms": 740
+        "wall_ms": 709
       },
       "trace_path": "bench/baselines/main/02-list-rust-files-rep2.jsonl"
     },
@@ -167,7 +167,7 @@
         "chat_errors": 0,
         "chat_round_trips": 2,
         "completion_tokens": 33,
-        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n× guard fired: cold-read → /dev/null\n\n17 + 25 is 42.\n\n",
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n× guard fired: cold-read → /dev/null\n\n17 + 25 equals 42.\n\n",
         "guard_fires": 1,
         "guards_by_kind": {
           "cold_read": 1
@@ -180,7 +180,7 @@
         "tool_calls_by_name": {},
         "tool_errors": 0,
         "total_tokens": 2247,
-        "wall_ms": 292
+        "wall_ms": 277
       },
       "trace_path": "bench/baselines/main/03-decline-irrelevant-rep0.jsonl"
     },
@@ -206,7 +206,7 @@
         "tool_calls_by_name": {},
         "tool_errors": 0,
         "total_tokens": 2247,
-        "wall_ms": 271
+        "wall_ms": 251
       },
       "trace_path": "bench/baselines/main/03-decline-irrelevant-rep1.jsonl"
     },
@@ -232,7 +232,7 @@
         "tool_calls_by_name": {},
         "tool_errors": 0,
         "total_tokens": 2247,
-        "wall_ms": 254
+        "wall_ms": 268
       },
       "trace_path": "bench/baselines/main/03-decline-irrelevant-rep2.jsonl"
     },
@@ -258,7 +258,7 @@
         "tool_calls_by_name": {},
         "tool_errors": 0,
         "total_tokens": 3181,
-        "wall_ms": 11500
+        "wall_ms": 11480
       },
       "trace_path": "bench/baselines/main/04-length-truncation-rep0.jsonl"
     },
@@ -284,7 +284,7 @@
         "tool_calls_by_name": {},
         "tool_errors": 0,
         "total_tokens": 3181,
-        "wall_ms": 11444
+        "wall_ms": 11428
       },
       "trace_path": "bench/baselines/main/04-length-truncation-rep1.jsonl"
     },
@@ -310,7 +310,7 @@
         "tool_calls_by_name": {},
         "tool_errors": 0,
         "total_tokens": 3181,
-        "wall_ms": 11358
+        "wall_ms": 11457
       },
       "trace_path": "bench/baselines/main/04-length-truncation-rep2.jsonl"
     },
@@ -323,7 +323,7 @@
         "chat_errors": 0,
         "chat_round_trips": 2,
         "completion_tokens": 57,
-        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind/bench/baselines/main/.scratch-05-write-from-scratch-rep0\n▸ write_file content=\"hello world\\n\" path=\"./hello.txt\"\n  └ ok 4ms 37 bytes\n\nThe file hello.txt has been created in the current directory with the content 'hello world'. It is exactly 12 bytes long.\n\n",
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind/bench/baselines/main/.scratch-05-write-from-scratch-rep0\n▸ write_file content=\"hello world\\n\" path=\"./hello.txt\"\n  └ ok 5ms 37 bytes\n\nThe file hello.txt has been created in the current directory with the content 'hello world'. It is exactly 12 bytes long.\n\n",
         "guard_fires": 0,
         "guards_by_kind": {},
         "native_tool_calls": 1,
@@ -336,7 +336,7 @@
         },
         "tool_errors": 0,
         "total_tokens": 2380,
-        "wall_ms": 416
+        "wall_ms": 427
       },
       "trace_path": "bench/baselines/main/05-write-from-scratch-rep0.jsonl"
     },
@@ -362,7 +362,7 @@
         },
         "tool_errors": 0,
         "total_tokens": 2380,
-        "wall_ms": 404
+        "wall_ms": 401
       },
       "trace_path": "bench/baselines/main/05-write-from-scratch-rep1.jsonl"
     },
@@ -374,8 +374,8 @@
         "cached_tool_calls": 0,
         "chat_errors": 0,
         "chat_round_trips": 2,
-        "completion_tokens": 56,
-        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind/bench/baselines/main/.scratch-05-write-from-scratch-rep2\n▸ write_file content=\"hello world\\n\" path=\"./hello.txt\"\n  └ ok 4ms 37 bytes\n\nThe file hello.txt has been created in the current directory with the content 'hello world'. It contains exactly one line of text.\n\n",
+        "completion_tokens": 57,
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind/bench/baselines/main/.scratch-05-write-from-scratch-rep2\n▸ write_file content=\"hello world\\n\" path=\"./hello.txt\"\n  └ ok 4ms 37 bytes\n\nThe file hello.txt has been created in the current directory with the content 'hello world'. It is exactly 12 bytes long.\n\n",
         "guard_fires": 0,
         "guards_by_kind": {},
         "native_tool_calls": 1,
@@ -387,8 +387,8 @@
           "write_file": 1
         },
         "tool_errors": 0,
-        "total_tokens": 2379,
-        "wall_ms": 354
+        "total_tokens": 2380,
+        "wall_ms": 438
       },
       "trace_path": "bench/baselines/main/05-write-from-scratch-rep2.jsonl"
     },
@@ -415,7 +415,7 @@
         },
         "tool_errors": 0,
         "total_tokens": 2503,
-        "wall_ms": 437
+        "wall_ms": 462
       },
       "trace_path": "bench/baselines/main/06-edit-file-rep0.jsonl"
     },
@@ -442,7 +442,7 @@
         },
         "tool_errors": 0,
         "total_tokens": 2503,
-        "wall_ms": 499
+        "wall_ms": 482
       },
       "trace_path": "bench/baselines/main/06-edit-file-rep1.jsonl"
     },
@@ -469,7 +469,7 @@
         },
         "tool_errors": 0,
         "total_tokens": 2503,
-        "wall_ms": 504
+        "wall_ms": 440
       },
       "trace_path": "bench/baselines/main/06-edit-file-rep2.jsonl"
     },
@@ -481,8 +481,8 @@
         "cached_tool_calls": 0,
         "chat_errors": 0,
         "chat_round_trips": 2,
-        "completion_tokens": 90,
-        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ grep path=\"/src\" pattern=\"safe_path\"\n  └ ok 2ms 1171 bytes\n\nGrep found the following lines mentioning \"safe_path\" in the src directory:\n\n- src/tools/fs_write.rs:7\n- src/tools/fs_write.rs:63\n- src/tools/fs_utils.rs:41\n- src/tools/fs_read.rs:8\n\nThese matches are spread across 4 files.\n\n",
+        "completion_tokens": 122,
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ grep path=\"/src\" pattern=\"safe_path\"\n  └ ok 1ms 1171 bytes\n\nGrep found the pattern \"safe_path\" in 15 lines across 4 files within the src/ directory. The most relevant ones are:\n\n- src/tools/fs_write.rs:7\n- src/tools/fs_utils.rs:329\n- src/tools/fs_read.rs:8, 36, 88, 150, 205\n\nThese lines indicate that \"safe_path\" is being used in various contexts within the project.\n\n",
         "guard_fires": 0,
         "guards_by_kind": {},
         "native_tool_calls": 1,
@@ -494,8 +494,8 @@
           "grep": 1
         },
         "tool_errors": 0,
-        "total_tokens": 2686,
-        "wall_ms": 642
+        "total_tokens": 2718,
+        "wall_ms": 833
       },
       "trace_path": "bench/baselines/main/07-grep-many-matches-rep0.jsonl"
     },
@@ -507,8 +507,8 @@
         "cached_tool_calls": 0,
         "chat_errors": 0,
         "chat_round_trips": 2,
-        "completion_tokens": 90,
-        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ grep path=\"/src\" pattern=\"safe_path\"\n  └ ok 3ms 1171 bytes\n\nGrep found the following lines mentioning \"safe_path\" in the src directory:\n\n- src/tools/fs_write.rs:7\n- src/tools/fs_write.rs:63\n- src/tools/fs_utils.rs:41\n- src/tools/fs_read.rs:8\n\nThese matches are spread across 4 files.\n\n",
+        "completion_tokens": 122,
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ grep path=\"/src\" pattern=\"safe_path\"\n  └ ok 3ms 1171 bytes\n\nGrep found the pattern \"safe_path\" in 15 lines across 4 files within the src/ directory. The matches are as follows:\n\n- src/tools/fs_write.rs:7\n- src/tools/fs_write.rs:63\n- src/tools/fs_utils.rs:41\n- src/tools/fs_read.rs:8\n\nThese results indicate that \"safe_path\" is being used in various parts of the codebase, including paths within directories and file names.\n\n",
         "guard_fires": 0,
         "guards_by_kind": {},
         "native_tool_calls": 1,
@@ -520,8 +520,8 @@
           "grep": 1
         },
         "tool_errors": 0,
-        "total_tokens": 2686,
-        "wall_ms": 629
+        "total_tokens": 2718,
+        "wall_ms": 813
       },
       "trace_path": "bench/baselines/main/07-grep-many-matches-rep1.jsonl"
     },
@@ -533,8 +533,8 @@
         "cached_tool_calls": 0,
         "chat_errors": 0,
         "chat_round_trips": 2,
-        "completion_tokens": 90,
-        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ grep path=\"/src\" pattern=\"safe_path\"\n  └ ok 2ms 1171 bytes\n\nGrep found the following lines mentioning \"safe_path\" in the src directory:\n\n- src/tools/fs_write.rs:7\n- src/tools/fs_write.rs:63\n- src/tools/fs_utils.rs:41\n- src/tools/fs_read.rs:8\n\nThese matches are spread across 4 files.\n\n",
+        "completion_tokens": 122,
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ grep path=\"/src\" pattern=\"safe_path\"\n  └ ok 2ms 1171 bytes\n\nGrep found the pattern \"safe_path\" in 15 lines across 4 files within the src/ directory. The matches are as follows:\n\n- src/tools/fs_write.rs:7\n- src/tools/fs_write.rs:63\n- src/tools/fs_utils.rs:41\n- src/tools/fs_read.rs:8\n\nThese results indicate that \"safe_path\" is being used in various parts of the codebase, including paths within directories and file names.\n\n",
         "guard_fires": 0,
         "guards_by_kind": {},
         "native_tool_calls": 1,
@@ -546,8 +546,8 @@
           "grep": 1
         },
         "tool_errors": 0,
-        "total_tokens": 2686,
-        "wall_ms": 635
+        "total_tokens": 2718,
+        "wall_ms": 789
       },
       "trace_path": "bench/baselines/main/07-grep-many-matches-rep2.jsonl"
     },
@@ -560,7 +560,7 @@
         "chat_errors": 0,
         "chat_round_trips": 2,
         "completion_tokens": 66,
-        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ bash cmd=\"rustc --version\"\n  └ ok 61ms 97 bytes\n\nThe version of rustc printed was:\n\n```bash\nrustc 1.95.0 (59807616e 2026-04-14)\n```\n\n",
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ bash cmd=\"rustc --version\"\n  └ ok 55ms 97 bytes\n\nThe version of rustc printed was:\n\n```bash\nrustc 1.95.0 (59807616e 2026-04-14)\n```\n\n",
         "guard_fires": 0,
         "guards_by_kind": {},
         "native_tool_calls": 1,
@@ -573,7 +573,7 @@
         },
         "tool_errors": 0,
         "total_tokens": 2344,
-        "wall_ms": 551
+        "wall_ms": 505
       },
       "trace_path": "bench/baselines/main/08-bash-rep0.jsonl"
     },
@@ -586,7 +586,7 @@
         "chat_errors": 0,
         "chat_round_trips": 2,
         "completion_tokens": 78,
-        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ bash cmd=\"rustc --version\"\n  └ ok 60ms 97 bytes\n\nThe version of rustc printed was:\n\nrustc 1.95.0 (59807616e 2026-04-14) (Homebrew)\n\nThis is the current stable release as of my last update.\n\n",
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ bash cmd=\"rustc --version\"\n  └ ok 50ms 97 bytes\n\nThe version of rustc printed was:\n\nrustc 1.95.0 (59807616e 2026-04-14) (Homebrew)\n\nThis is the current stable release as of my last update.\n\n",
         "guard_fires": 0,
         "guards_by_kind": {},
         "native_tool_calls": 1,
@@ -599,7 +599,7 @@
         },
         "tool_errors": 0,
         "total_tokens": 2356,
-        "wall_ms": 572
+        "wall_ms": 585
       },
       "trace_path": "bench/baselines/main/08-bash-rep1.jsonl"
     },
@@ -611,8 +611,8 @@
         "cached_tool_calls": 0,
         "chat_errors": 0,
         "chat_round_trips": 2,
-        "completion_tokens": 66,
-        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ bash cmd=\"rustc --version\"\n  └ ok 59ms 97 bytes\n\nThe version of rustc printed was:\n\n```bash\nrustc 1.95.0 (59807616e 2026-04-14)\n```\n\n",
+        "completion_tokens": 78,
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind\n▸ bash cmd=\"rustc --version\"\n  └ ok 55ms 97 bytes\n\nThe version of rustc printed was:\n\nrustc 1.95.0 (59807616e 2026-04-14) (Homebrew)\n\nThis is the current stable release as of my last update.\n\n",
         "guard_fires": 0,
         "guards_by_kind": {},
         "native_tool_calls": 1,
@@ -624,8 +624,8 @@
           "bash": 1
         },
         "tool_errors": 0,
-        "total_tokens": 2344,
-        "wall_ms": 467
+        "total_tokens": 2356,
+        "wall_ms": 614
       },
       "trace_path": "bench/baselines/main/08-bash-rep2.jsonl"
     },
@@ -651,7 +651,7 @@
         },
         "tool_errors": 0,
         "total_tokens": 2406,
-        "wall_ms": 635
+        "wall_ms": 537
       },
       "trace_path": "bench/baselines/main/09-dedup-untriggered-rep0.jsonl"
     },
@@ -677,7 +677,7 @@
         },
         "tool_errors": 0,
         "total_tokens": 2406,
-        "wall_ms": 643
+        "wall_ms": 563
       },
       "trace_path": "bench/baselines/main/09-dedup-untriggered-rep1.jsonl"
     },
@@ -703,9 +703,90 @@
         },
         "tool_errors": 0,
         "total_tokens": 2406,
-        "wall_ms": 641
+        "wall_ms": 521
       },
       "trace_path": "bench/baselines/main/09-dedup-untriggered-rep2.jsonl"
+    },
+    {
+      "failures": [],
+      "id": "10-write-pressure-untriggered-rep0",
+      "passed": true,
+      "stats": {
+        "cached_tool_calls": 0,
+        "chat_errors": 0,
+        "chat_round_trips": 2,
+        "completion_tokens": 119,
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind/bench/baselines/main/.scratch-10-write-pressure-untriggered-rep0\n▸ write_file content=\"done\" path=\"/Users/mtimpe/Downloads/micro-mind/ben\"…\n  └ ok 5ms 135 bytes\n▸ list_dir path=\".\"\n  └ ok 0ms 35 bytes\n\nThe contents of the directories are as follows:\n\n- **empty1/** is empty.\n- **empty2/** is empty.\n- **empty3/** is empty.\n- **result.txt** contains 'done'.\n\n",
+        "guard_fires": 0,
+        "guards_by_kind": {},
+        "native_tool_calls": 2,
+        "prompt_tokens": 2520,
+        "recovered_tool_calls": 0,
+        "stop_reason": "FinalAnswer",
+        "tool_calls": 2,
+        "tool_calls_by_name": {
+          "list_dir": 1,
+          "write_file": 1
+        },
+        "tool_errors": 0,
+        "total_tokens": 2639,
+        "wall_ms": 956
+      },
+      "trace_path": "bench/baselines/main/10-write-pressure-untriggered-rep0.jsonl"
+    },
+    {
+      "failures": [],
+      "id": "10-write-pressure-untriggered-rep1",
+      "passed": true,
+      "stats": {
+        "cached_tool_calls": 0,
+        "chat_errors": 0,
+        "chat_round_trips": 2,
+        "completion_tokens": 119,
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind/bench/baselines/main/.scratch-10-write-pressure-untriggered-rep1\n▸ write_file content=\"done\" path=\"/Users/mtimpe/Downloads/micro-mind/ben\"…\n  └ ok 5ms 135 bytes\n▸ list_dir path=\".\"\n  └ ok 0ms 35 bytes\n\nThe contents of the directories are as follows:\n\n- **empty1/** is empty.\n- **empty2/** is empty.\n- **empty3/** is empty.\n- **result.txt** contains 'done'.\n\n",
+        "guard_fires": 0,
+        "guards_by_kind": {},
+        "native_tool_calls": 2,
+        "prompt_tokens": 2520,
+        "recovered_tool_calls": 0,
+        "stop_reason": "FinalAnswer",
+        "tool_calls": 2,
+        "tool_calls_by_name": {
+          "list_dir": 1,
+          "write_file": 1
+        },
+        "tool_errors": 0,
+        "total_tokens": 2639,
+        "wall_ms": 874
+      },
+      "trace_path": "bench/baselines/main/10-write-pressure-untriggered-rep1.jsonl"
+    },
+    {
+      "failures": [],
+      "id": "10-write-pressure-untriggered-rep2",
+      "passed": true,
+      "stats": {
+        "cached_tool_calls": 0,
+        "chat_errors": 0,
+        "chat_round_trips": 2,
+        "completion_tokens": 119,
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) — /help for commands\ncwd: /Users/mtimpe/Downloads/micro-mind/bench/baselines/main/.scratch-10-write-pressure-untriggered-rep2\n▸ write_file content=\"done\" path=\"/Users/mtimpe/Downloads/micro-mind/ben\"…\n  └ ok 7ms 135 bytes\n▸ list_dir path=\".\"\n  └ ok 0ms 35 bytes\n\nThe contents of the directories are as follows:\n\n- **empty1/** is empty.\n- **empty2/** is empty.\n- **empty3/** is empty.\n- **result.txt** contains 'done'.\n\n",
+        "guard_fires": 0,
+        "guards_by_kind": {},
+        "native_tool_calls": 2,
+        "prompt_tokens": 2520,
+        "recovered_tool_calls": 0,
+        "stop_reason": "FinalAnswer",
+        "tool_calls": 2,
+        "tool_calls_by_name": {
+          "list_dir": 1,
+          "write_file": 1
+        },
+        "tool_errors": 0,
+        "total_tokens": 2639,
+        "wall_ms": 891
+      },
+      "trace_path": "bench/baselines/main/10-write-pressure-untriggered-rep2.jsonl"
     }
   ],
   "schema_v": 1

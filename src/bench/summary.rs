@@ -288,6 +288,7 @@ mod tests {
             expect: Default::default(),
             cwd_isolated: false,
             seed_files: vec![],
+            seed_dirs: vec![],
         };
         let s = Summary::default();
         assert!(check_expectations(&fx, &s).is_empty());

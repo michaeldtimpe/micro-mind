@@ -1,0 +1,68 @@
+# Bench fixture format — see bench/README.md for the schema reference.
+#
+# What this fixture *attempted* to do: bait `WritePressure` (the post-write
+# zero-byte-streak guard in src/agent/guards.rs) by seeding three empty
+# directories and asking the model to write a file, then list each of
+# them. `list_dir` on a truly empty directory is the only tool/result
+# combination that yields `bytes_out = 0` under the current pipeline:
+# read_file always emits a "[path bytes=X..Y of Z]\n" header, grep with
+# zero matches returns "No matches for /.../ …\n". Three consecutive
+# zero-byte non-write results after the write should have tripped
+# `WRITE_PRESSURE_ZERO_BYTE_LIMIT = 3` → `StopReason::WritePressure`.
+#
+# What actually happened: qwen25-1.5b-instruct routes the survey through
+# a *single* `list_dir(".")` call on the scratch cwd. That returns the
+# three empty subdirs plus result.txt — 35 bytes, non-zero — so the
+# zero-byte streak never reaches 3. The model surveys, narrates, stops.
+# Bit-exact across 10/10 reps at the predicate level: stop_reason =
+# FinalAnswer, 2 tool calls (write_file + list_dir), 2629-2648 tokens
+# (~19-token cold-cache spread, documented behavior).
+#
+# So this fixture demonstrates a *second* structural unreachability:
+# `WritePressure` requires the model to make a sequence of *separate*
+# tool calls each returning zero bytes, but 1.5 B routes multi-subdir
+# surveys through a single parent-dir list (which is the right choice
+# pragmatically). The guard stays load-bearing for the failure shape
+# where a model "spins" on per-target empty results — that's a 35 B+
+# behavior pattern, not a 1.5 B one.
+#
+# Schema dependency: uses the `seed_dirs` field (added in this commit)
+# to create empty subdirectories. `seed_files` can't do this on its own
+# — seeding a file in `a/.gitkeep` would make `a/` a non-empty directory.
+#
+# See `lessons.md` 2026-05-16 for the root-cause writeup.
+
+id = "10-write-pressure-untriggered"
+description = "WritePressure bait that does NOT fire on qwen25-1.5b-instruct: model routes the empty-subdir survey through one parent list_dir call instead of three per-subdir calls."
+prompt = "First, write the text 'done' to a file called result.txt in the current directory. Then list the contents of the directories empty1, empty2, and empty3 (in that order) and tell me what's inside each."
+cwd_isolated = true
+
+seed_dirs = ["empty1", "empty2", "empty3"]
+
+[expect]
+# Locked to the 10/10 deterministic predicate outcome. The final-answer
+# *text* varies across reps (3 distinct phrasings) due to cold-cache
+# state — documented in lessons.md/2026-05-15. We don't lock must_contain
+# because no anchor text is stable across all variants without also
+# matching the prompt verbatim.
+stop_reason = "FinalAnswer"
+
+# Always exactly 2 calls: write_file + list_dir.
+min_tool_calls = 2
+max_tool_calls = 2
+
+# Proves the model performed BOTH halves of the task.
+must_call_all_of = ["write_file", "list_dir"]
+
+# Mutating-other tools and bash out of scope. read_file / grep /
+# list_files_recursive out of scope — they'd represent the model picking
+# a different survey route and we'd want to know.
+must_not_call = ["read_file", "list_files_recursive", "grep", "edit_file", "bash"]
+
+max_wall_ms = 10000
+
+# Architectural floor at temp=0, measured 2026-05-16: 2629-2648 across
+# 10 reps (~19-token cold-cache spread). Model issues write_file then
+# list_dir("."), summarizes in a 4-line answer. 3400 gives ~750 tokens
+# of headroom over the high end.
+max_total_tokens = 3400

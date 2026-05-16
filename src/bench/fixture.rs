@@ -26,6 +26,17 @@ pub struct Fixture {
     /// (the file must exist before the model can read-then-edit it).
     #[serde(default)]
     pub seed_files: Vec<SeedFile>,
+    /// Empty directories to create in the scratch dir before invoking
+    /// `micro-mind`. Only honored when `cwd_isolated = true`. Use for
+    /// fixtures that need truly-empty subdirectories — for example,
+    /// baiting `WritePressure` via `list_dir` on an empty dir requires
+    /// the directory to exist *and* contain nothing (which a `seed_files`
+    /// entry can't produce on its own, since seeding a file always
+    /// leaves that file in the parent dir). Created after `seed_files`
+    /// is written, so a seeded file under one of these paths will not
+    /// be overwritten.
+    #[serde(default)]
+    pub seed_dirs: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -149,6 +160,31 @@ mod tests {
         let mc = fx.expect.must_contain.unwrap();
         assert_eq!(mc.text, "42");
         assert!(mc.case_insensitive, "default should be true");
+    }
+
+    #[test]
+    fn parses_seed_dirs() {
+        let src = r#"
+            id = "with_dirs"
+            prompt = "p"
+            cwd_isolated = true
+            seed_dirs = ["a", "b/c"]
+            [expect]
+        "#;
+        let fx = Fixture::from_toml_str(src).unwrap();
+        assert!(fx.cwd_isolated);
+        assert_eq!(fx.seed_dirs, vec!["a".to_string(), "b/c".to_string()]);
+    }
+
+    #[test]
+    fn seed_dirs_defaults_empty_when_absent() {
+        let src = r#"
+            id = "x"
+            prompt = "p"
+            [expect]
+        "#;
+        let fx = Fixture::from_toml_str(src).unwrap();
+        assert!(fx.seed_dirs.is_empty());
     }
 
     #[test]

@@ -168,6 +168,11 @@ fn main() -> Result<()> {
                     std::fs::write(&seed_path, &seed.content)
                         .with_context(|| format!("write seed {}", seed_path.display()))?;
                 }
+                for seed_dir in &fx.seed_dirs {
+                    let dir_path = s.join(seed_dir);
+                    std::fs::create_dir_all(&dir_path)
+                        .with_context(|| format!("create seed dir {}", dir_path.display()))?;
+                }
                 (s.clone(), Some(s))
             } else {
                 (cwd.clone(), None)
