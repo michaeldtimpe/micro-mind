@@ -60,7 +60,7 @@ LLAMA_SERVER_URL=http://127.0.0.1:8080 \
 # 5. Verify locally — the replay must pass since CI gates on it.
 cargo run --bin bench-replay -- --all bench/tasks --runs bench/baselines/main
 
-# 6. Commit. Baselines are small (~30 KB for 15 traces).
+# 6. Commit. Baselines are small (~170 KB for 33 traces at 11 fixtures × 3 reps).
 git add bench/baselines/main
 git commit -m "bench: capture baseline (date / context)"
 ```

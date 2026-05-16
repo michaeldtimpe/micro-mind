@@ -105,7 +105,7 @@ loop (max MAX_TURNS=8 turns):
 record Stop event (turn, reason, wall_ms, final_answer)
 ```
 
-Stop reasons: `FinalAnswer`, `TurnCap`, `WritePressure`, `Dedup`, `Length`, `Error(String)`. All five appear as fixture-predicate strings in `bench/tasks/*.toml` and as `stop.reason` in JSONL traces.
+Stop reasons emitted into the `stop.reason` field of JSONL traces: `FinalAnswer`, `TurnCap`, `WritePressure`, `Dedup`, `Length`, `Error(String)`. Any can be referenced as a fixture predicate (`stop_reason = "..."`); current fixtures only assert `FinalAnswer` (the recovery / happy path on most fixtures) and `Length` (fixture `04-length-truncation`). The `-untriggered` fixtures (`09`, `10`) deliberately *don't* lock a stop reason because the guard they target isn't reached on this model, and `11-write-file-placeholder` omits it because both `FinalAnswer` (recovery) and `Dedup` (runaway-loop safety net) are correct outcomes — see `lessons.md` 2026-05-16.
 
 Two response shapes are handled:
 

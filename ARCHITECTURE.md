@@ -52,7 +52,7 @@ src/
    └─ bench_compare.rs    baseline vs candidate summary.json diff
 ```
 
-Tests live alongside each module (`#[cfg(test)] mod tests`). 114 unit tests as of the must_call_all_of drop (18 lib + 94 main bin + 2 bench-run).
+Tests live alongside each module (`#[cfg(test)] mod tests`). 119 unit tests across the lib and the bench-* bins as of 2026-05-16 (min_tool_errors predicate landed). Re-run `cargo test --release --all` for the live count; the breakdown drifts as modules grow.
 
 ## Runtime flow
 
@@ -375,10 +375,12 @@ LLAMA_SERVER_URL=http://127.0.0.1:8080 \
   ./target/release/bench-run --bin ./target/release/micro-mind --reps 3
 ```
 
-CI is hermetic: no llama-server, no GPU. The chain there is `cargo test` →
-`cargo fmt --check` → `cargo clippy -D warnings` → schema validate the sample
-trace → replay sample trace against sample fixture → summarize sample trace →
-advisory batch replay of every committed `bench/baselines/*/` against the
-current fixture set.
+CI is hermetic: no llama-server, no GPU. The chain there is `cargo fmt
+--check` → `cargo clippy -D warnings` → `cargo test --all-targets` → schema
+validate the sample trace → replay sample trace against sample fixture →
+summarize sample trace → **gating replay** of `bench/baselines/main/`
+(every predicate must hold; currently 11 fixtures × 3 reps = 33/33) →
+**advisory replay** of every directory under `bench/baselines/archive/`
+(`continue-on-error: true`; historical drift surfaces but doesn't gate).
 
 See `README.md §Quick start` and `bench/README.md` for the full matrix.
