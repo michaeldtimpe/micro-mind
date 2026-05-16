@@ -249,3 +249,21 @@ The artifact left behind: the `must_call_all_of` predicate (added in `TaskExpect
 **Affected files**: `src/bench/fixture.rs` (added `must_call_all_of` to `TaskExpect`), `src/bench/summary.rs` (predicate logic + 2 unit tests), `bench/tasks/07-grep-many-matches.toml` (new, downscoped from the abandoned `07-grep-then-read.toml`).
 
 ---
+
+### [2026-05-15] Determinism survives 10 reps, but cold-start adds ~20 tokens of prompt-accounting noise
+
+**What happened**: Ran the canonical 7-fixture set at `--reps 10` against a single warm `llama-server` to verify the 3-rep determinism we'd been claiming holds at scale. Result: 6 of 7 tasks are *bit-exact* — same `total_tokens` across all 10 reps, same `final_answer`, byte-identical. The seventh (`01-read-readme`) showed a 12-token spread between rep 1 (4635) and reps 2–10 (4647 each), with the `final_answer` *identical* across all 10 reps.
+
+Separately, when we restart `llama-server` between bench runs, the per-fixture token totals shift by ~15–20 tokens across the suite even though the model output is identical (`05-write-from-scratch` rep 1 in run A = 2380, in run B = 2398, etc.). All final_answers stay byte-identical between runs.
+
+**Root cause**: Within a session, `temperature=0.0 + seed=42 + Q8_0 + Metal` is sufficient for bit-exact reproducibility of the *model output*. But `prompt_tokens` (and therefore `total_tokens`) reported by `llama-server` is sensitive to prompt-cache state. The very first chat request after a server cold-start re-tokenizes the system prompt + tool defs from scratch; subsequent requests reuse cached tokenization, which the server reports slightly differently. Across cold starts, the cache is in a different initial state and the floor moves by a similar amount.
+
+This is not a model determinism issue — it's an accounting artifact in the `usage` field of the OpenAI-compatible response. The actual probability distribution over output tokens is unchanged.
+
+**Fix / takeaway**: Nothing to fix; it works as intended. But we document it explicitly because the implication is non-obvious: **fixture token caps must absorb cold-start variance.** The standing convention (calibrate to measured floor + ~30 % headroom) handles this comfortably — every current fixture's headroom is ≥ 300 tokens, way above the observed ~20-token cold-start delta. Don't tighten caps below ~300 tokens of headroom without first measuring across a fresh server cold-start, or the next CI run on a different runner will start failing on noise.
+
+The 10-rep verification itself was worth doing once and not committing as a recurring artifact: 70 traces × ~2 KB = ~140 KB of noise that doesn't add signal beyond what the 3-rep canonical baseline already captures. The investment was the determinism *evidence*, not the trace files.
+
+**Affected files**: None directly (docs-only entry). The headline number — "21/21 deterministic" — stays accurate; the asterisk is that "deterministic" means bit-exact within a session and `final_answer`-stable across cold starts, with ~20 tokens of `usage` accounting noise that the predicate headroom absorbs.
+
+---
