@@ -1,8 +1,8 @@
-{"payload":{"cwd":"/Users/mtimpe/Downloads/micro-mind","event":"session_start","model":"qwen25-1.5b-instruct","schema_v":2,"tools":["read_file","list_dir","list_files_recursive","grep","write_file","edit_file","bash"]},"ts_ms":1778941931222}
-{"payload":{"event":"chat_request","n_messages":2,"n_tools":7,"turn":0},"ts_ms":1778941931222}
-{"payload":{"completion_tokens":26,"error":null,"event":"chat_response","finish_reason":"tool_calls","native_tool_calls":1,"prompt_tokens":1089,"recovered_tool_calls":0,"total_tokens":1115,"turn":0,"wall_ms":156},"ts_ms":1778941931378}
-{"payload":{"arguments":{"path":"/src","pattern":"safe_path"},"event":"tool_call","name":"grep","tool_call_id":"C1horsMrzZs56T4eaOCLsIZgl4JXZbqP","turn":0},"ts_ms":1778941931378}
-{"payload":{"bytes_out":1171,"cached":false,"error":null,"event":"tool_result","name":"grep","ok":true,"tool_call_id":"C1horsMrzZs56T4eaOCLsIZgl4JXZbqP","turn":0,"wall_ms":1},"ts_ms":1778941931380}
-{"payload":{"event":"chat_request","n_messages":5,"n_tools":7,"turn":1},"ts_ms":1778941931380}
-{"payload":{"completion_tokens":64,"error":null,"event":"chat_response","finish_reason":"stop","native_tool_calls":0,"prompt_tokens":1507,"recovered_tool_calls":0,"total_tokens":1571,"turn":1,"wall_ms":417},"ts_ms":1778941931797}
-{"payload":{"event":"stop","final_answer":"Grep found the following lines mentioning \"safe_path\" in the src directory:\n\n- src/tools/fs_write.rs:7\n- src/tools/fs_write.rs:63\n- src/tools/fs_utils.rs:41\n- src/tools/fs_read.rs:8\n\nThese matches are spread across 4 files.","reason":"FinalAnswer","turn":1,"wall_ms":575},"ts_ms":1778941931797}
+{"payload":{"cwd":"/Users/mtimpe/Downloads/micro-mind","event":"session_start","model":"qwen25-1.5b-instruct","schema_v":2,"tools":["read_file","list_dir","list_files_recursive","grep","write_file","edit_file","bash"]},"ts_ms":1778942193088}
+{"payload":{"event":"chat_request","n_messages":2,"n_tools":7,"turn":0},"ts_ms":1778942193088}
+{"payload":{"completion_tokens":26,"error":null,"event":"chat_response","finish_reason":"tool_calls","native_tool_calls":1,"prompt_tokens":1089,"recovered_tool_calls":0,"total_tokens":1115,"turn":0,"wall_ms":193},"ts_ms":1778942193281}
+{"payload":{"arguments":{"path":"/src","pattern":"safe_path"},"event":"tool_call","name":"grep","tool_call_id":"C2NS7Bve5Ip3JUWLSYVqEaMx9WVFyrxX","turn":0},"ts_ms":1778942193281}
+{"payload":{"bytes_out":1171,"cached":false,"error":null,"event":"tool_result","name":"grep","ok":true,"tool_call_id":"C2NS7Bve5Ip3JUWLSYVqEaMx9WVFyrxX","turn":0,"wall_ms":3},"ts_ms":1778942193285}
+{"payload":{"event":"chat_request","n_messages":5,"n_tools":7,"turn":1},"ts_ms":1778942193285}
+{"payload":{"completion_tokens":64,"error":null,"event":"chat_response","finish_reason":"stop","native_tool_calls":0,"prompt_tokens":1507,"recovered_tool_calls":0,"total_tokens":1571,"turn":1,"wall_ms":432},"ts_ms":1778942193717}
+{"payload":{"event":"stop","final_answer":"Grep found the following lines mentioning \"safe_path\" in the src directory:\n\n- src/tools/fs_write.rs:7\n- src/tools/fs_write.rs:63\n- src/tools/fs_utils.rs:41\n- src/tools/fs_read.rs:8\n\nThese matches are spread across 4 files.","reason":"FinalAnswer","turn":1,"wall_ms":629},"ts_ms":1778942193717}

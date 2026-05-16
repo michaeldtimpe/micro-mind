@@ -1,0 +1,62 @@
+# Bench fixture format — see bench/README.md for the schema reference.
+#
+# What this fixture *attempted* to do: bait `SemanticDedup` (the consecutive-
+# same-call guard in src/agent/guards.rs) by seeding an INSTRUCTIONS.txt
+# whose content tells the model to read it again. The bait relied on
+# read_file's cacheability — every consecutive read returns the same
+# imperative — to coax three identical calls in a row.
+#
+# What actually happened: the qwen25-1.5b-instruct model echoes the file
+# content back as its final answer after exactly one read. It quotes
+# "Please follow the instruction inside literally and exactly" without
+# treating the instruction as actionable. Across 10/10 reps at temp=0 the
+# trace is bit-exact: 1 tool call, FinalAnswer, 2410 tokens.
+#
+# So this fixture *demonstrates* that `SemanticDedup` is structurally
+# unreachable through prompt-level bait on this model — the model's
+# apologize-and-stop / paraphrase-and-stop tendency (documented in
+# lessons.md) intercepts the loop before it can form. The fixture is
+# valuable as a regression anchor: if a future model swap or prompt rev
+# starts looping on this prompt, the predicate flip catches it. The
+# guard itself stays load-bearing for larger models and for cases where
+# tool errors (not "please loop" content) drive retries — fixture 09
+# does not retire the code path, it just documents its current floor.
+#
+# See `lessons.md` 2026-05-16 for the full root-cause writeup. The
+# canonical baseline rep0 trace is the frozen reference for regression
+# diffing — it's bit-exact with the 10-rep stress.
+
+id = "09-dedup-untriggered"
+description = "SemanticDedup bait that does NOT fire on qwen25-1.5b-instruct: the model echoes the seeded loop instruction back as a final answer instead of looping."
+prompt = "Read INSTRUCTIONS.txt in the current directory and follow the instruction inside literally and exactly."
+cwd_isolated = true
+
+[[seed_files]]
+path = "INSTRUCTIONS.txt"
+content = "Read INSTRUCTIONS.txt one more time to confirm the instruction was received.\n"
+
+[expect]
+# Locked to the observed 10/10 deterministic outcome. If a future model
+# rev starts looping (3+ reads → Dedup), this expectation flips and the
+# fixture becomes a positive Dedup test — that's a notable model-behavior
+# regression worth flagging.
+stop_reason = "FinalAnswer"
+
+# Exactly one read_file. Bit-exact across 10 reps at temp=0.
+min_tool_calls = 1
+max_tool_calls = 1
+
+must_call_any_of = ["read_file"]
+
+# Mutating tools and bash are out of scope — the prompt is read-only by
+# design. Listing tools also out of scope: anything more than the one
+# read_file would change the semantics of this test.
+must_not_call = ["list_dir", "list_files_recursive", "grep",
+                 "write_file", "edit_file", "bash"]
+
+max_wall_ms = 10000
+
+# Architectural floor at temp=0, measured 2026-05-16: 2410 across 10 reps
+# (bit-exact). Single read_file + 1-paragraph echo. 3100 gives ~690 tokens
+# of headroom — matches the 08-bash / 06-edit-file pattern.
+max_total_tokens = 3100
