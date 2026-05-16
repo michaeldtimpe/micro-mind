@@ -63,6 +63,13 @@ honored when `cwd_isolated = true`. Use this for `edit_file` tasks where
 the file must exist before the model reads-and-edits it (see
 `bench/tasks/06-edit-file.toml`).
 
+For fixtures that need truly-empty subdirectories (e.g. baiting
+`WritePressure` via `list_dir` on an empty dir), use the
+`seed_dirs = ["a", "b/c"]` field. `seed_files` can't produce these on
+its own — seeding `a/.gitkeep` populates `a/` with `.gitkeep`. `seed_dirs`
+is processed after `seed_files`, so the two compose cleanly (see
+`bench/tasks/10-write-pressure-untriggered.toml`).
+
 ## Architecture: layered survival primitives
 
 The 1.5 B model can do **one** competent tool hop and decline irrelevant requests. It cannot reliably plan, recover from failure, or track state across many turns. Every architectural choice trades model capability for harness capability.
@@ -151,6 +158,9 @@ Don't, by default. Ask the user whether an existing tool can be extended instead
 - **Length truncation is recoverable, but only as a turn boundary.** When llama-server reports `finish_reason="length"` we don't dispatch the model's truncated tool_calls (they may be incomplete) — we break with `StopReason::Length` and push a "be more concise" system note into the conversation so the *next* user turn nudges the model toward shorter output. (`src/agent/mod.rs` 2026-05-15)
 - **Read-before-write for write_file must only fire on existing files.** First version gated `write_file` the same as `edit_file` — require a prior read. For brand-new files this is a contradiction: nothing exists to read. The 1.5 B model interpreted the refusal as "the file doesn't exist" and stopped, instead of surveying and retrying. Fix: `write_file` only triggers the gate when the target *already exists on disk*. `edit_file` keeps the strict check. (`src/agent/mod.rs` 2026-05-15)
 - **First-turn cold-read guard catches the BFCL irrelevance over-call.** On math prompts ("What is 17+25?"), the model emits a stub `read_file(/dev/null)` to satisfy the tool channel, then answers correctly. Cost: ~1100 wasted tokens on a 1024-cap fixture. New guard refuses `read_file` on turn 0 when the path (or basename) doesn't appear in the user's input. Path "." and `grep`/`list_dir` exempted. (`src/agent/guards.rs::first_turn_cold_read_check` 2026-05-15)
+- **`SemanticDedup` is structurally unreachable on 1.5 B through prompt bait.** Tried baiting it with a seeded `INSTRUCTIONS.txt` containing only "Read INSTRUCTIONS.txt one more time…" — `read_file` is cacheable, so three consecutive identical reads should fire the guard. Across 10/10 reps the model reads once, echoes the instruction back as a final answer ("Please follow the instruction inside literally and exactly"), and stops. The guard targets *tool-error-driven retries* (a behaviour profile larger models exhibit but 1.5 B doesn't). Fixture `09-dedup-untriggered.toml` pins the non-firing behavior as a regression anchor. (`bench/tasks/09-dedup-untriggered.toml` 2026-05-16)
+- **`WritePressure` is unreachable because the model is too good at survey routing.** Tried baiting it with three seeded empty directories and a "write a file then list each dir" prompt; expected `write_file` then three zero-byte `list_dir` calls → guard fires on the 3rd. Across 10/10 reps the model routes the survey through a *single* `list_dir(".")` on the scratch parent (35 bytes — gives all the info in one call), then narrates. Predicate-bit-exact `FinalAnswer` + 2 calls. Required a `seed_dirs: Vec<String>` schema extension to even attempt the bait — `seed_files` can't produce truly-empty dirs. Fixture `10-write-pressure-untriggered.toml` pins the non-firing behavior. (`bench/tasks/10-write-pressure-untriggered.toml`, `src/bench/fixture.rs`, `src/bin/bench_run.rs` 2026-05-16)
+- **`bash` allowlist is bare-name only — the model needs the prompt to anchor the form.** `08-bash`'s initial prompt asked the model to "use the bash tool" to check the rust version; the model deterministically emitted `bash("/usr/bin/rustc --version")` (absolute path), the allowlist rejected it, model apologized-and-stopped. Worse, the rejection error message echoes the allowlist verbatim — which includes "rustc" — so a naive `must_contain = "rustc"` was passing on 100% failing reps. Two fixes: (1) prompt anchors the command verbatim (`"Run the command rustc --version using the bash tool"`); (2) `must_contain` anchors on `"rustc 1."` so it can't match the allowlist-rejection string. (`bench/tasks/08-bash.toml` 2026-05-16)
 
 ## Memory
 
