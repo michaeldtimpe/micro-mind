@@ -1,0 +1,56 @@
+# Bench fixture format — see bench/README.md for the schema reference.
+#
+# Exercises the `bash` tool (zero fixture coverage before this one). A
+# single-hop invocation of an allowlisted binary (`rustc --version`) with
+# no shell metacharacters. Validates:
+#   - tool routing chooses bash for "what's installed" questions,
+#   - the allowlist accepts rustc,
+#   - the tool-result framing ("$ cmd\nexit=N time=Xms\n--- stdout ---\n…")
+#     stays under the 8 KB hard cap,
+#   - the model echoes "rustc" in its final answer (proof it consumed the
+#     bash output rather than hallucinating).
+#
+# Not `cwd_isolated`: bash is read-only here and isolation might bias the
+# model toward looking for Cargo.toml first. The prompt names the tool
+# explicitly to hedge against repository-survey detours.
+
+id = "08-bash"
+description = "Single-hop bash invocation on an allowlisted binary (rustc --version)."
+# Phrase the command verbatim. Without this, qwen25-1.5b-instruct emits the
+# absolute path `/usr/bin/rustc` which the bash allowlist (bare names only)
+# rejects — the model then apologizes-and-stops instead of retrying with the
+# bare name. The prompt anchors the form. (Observed 2026-05-16 on 10/10 reps
+# of an earlier prompt variant.)
+prompt = "Run the command `rustc --version` using the bash tool and tell me what version was printed."
+
+[expect]
+stop_reason = "FinalAnswer"
+
+# Minimum: one bash call. Cap at 2 to allow one survey + bash on retry.
+min_tool_calls = 1
+max_tool_calls = 2
+
+# Must use bash.
+must_call_any_of = ["bash"]
+
+# Read-only test; mutating tools out of scope. read_file/grep also out of
+# scope — bash is the only legitimate routing for "what's installed".
+must_not_call = ["read_file", "list_dir", "list_files_recursive", "grep",
+                 "write_file", "edit_file"]
+
+max_wall_ms = 20000
+# Architectural floor at temp=0, measured 2026-05-16: 2356 across 10 reps
+# (bit-exact deterministic). Model issues exactly one bash(rustc --version)
+# call, the tool returns ~95 bytes of real rustc output, model echoes it
+# back in a 1-line answer. 3100 gives ~750 tokens of headroom for a future
+# prompt or tool-def rev.
+max_total_tokens = 3100
+
+# Proof the model consumed the *real* bash output. We anchor on "rustc 1."
+# (the prefix of every real rustc version line) rather than the bare token
+# "rustc": the bash tool's allowlist-rejection error message echoes the
+# allowlist verbatim, which contains "rustc" — a bare-token match would
+# pass even on a 100% failing rep. Confirmed 2026-05-16 against a rep that
+# emitted /usr/bin/rustc and got rejected.
+[expect.must_contain]
+text = "rustc 1."
