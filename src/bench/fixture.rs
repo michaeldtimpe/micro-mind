@@ -68,6 +68,16 @@ pub struct TaskExpect {
     /// Fail if any of these tools is observed.
     #[serde(default)]
     pub must_not_call: Vec<String>,
+    /// Lower bound on `tool_errors` (tool results with `ok=false`). Use to
+    /// positively assert that a guard/rejection fired — e.g. `min_tool_errors
+    /// = 1` for a placeholder-rejection fixture.
+    #[serde(default)]
+    pub min_tool_errors: Option<u32>,
+    /// Upper bound on `tool_errors`. Use to bound recovery-loop behavior —
+    /// e.g. `max_tool_errors = 1` says "at most one rejection; more means
+    /// the model is looping on the same failure".
+    #[serde(default)]
+    pub max_tool_errors: Option<u32>,
     /// Hard upper bound on `stop.wall_ms` from the JSONL trace.
     #[serde(default)]
     pub max_wall_ms: Option<u64>,
@@ -199,6 +209,8 @@ mod tests {
             max_tool_calls = 5
             must_call_any_of = ["read_file"]
             must_not_call = ["bash"]
+            min_tool_errors = 1
+            max_tool_errors = 2
             max_wall_ms = 1000
             max_total_tokens = 2000
         "#;
@@ -206,6 +218,8 @@ mod tests {
         assert_eq!(fx.expect.min_tool_calls, Some(1));
         assert_eq!(fx.expect.must_call_any_of, vec!["read_file"]);
         assert_eq!(fx.expect.must_not_call, vec!["bash"]);
+        assert_eq!(fx.expect.min_tool_errors, Some(1));
+        assert_eq!(fx.expect.max_tool_errors, Some(2));
     }
 
     #[test]

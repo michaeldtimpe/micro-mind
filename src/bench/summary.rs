@@ -180,6 +180,16 @@ pub fn check_expectations(fx: &Fixture, s: &Summary) -> Vec<String> {
             fails.push(format!("forbidden tool call: {bad}"));
         }
     }
+    if let Some(min) = fx.expect.min_tool_errors
+        && s.tool_errors < min
+    {
+        fails.push(format!("tool_errors={} < min={min}", s.tool_errors));
+    }
+    if let Some(max) = fx.expect.max_tool_errors
+        && s.tool_errors > max
+    {
+        fails.push(format!("tool_errors={} > max={max}", s.tool_errors));
+    }
     if let Some(max) = fx.expect.max_wall_ms
         && s.wall_ms > max
     {
@@ -356,6 +366,57 @@ mod tests {
         s.tool_calls_by_name.insert("bash".into(), 1);
         let fails = check_expectations(&fx, &s);
         assert!(fails.iter().any(|f| f.contains("bash")));
+    }
+
+    #[test]
+    fn check_passes_min_tool_errors_when_met() {
+        let fx_src = r#"
+            id = "t"
+            prompt = "p"
+            [expect]
+            min_tool_errors = 1
+        "#;
+        let fx = Fixture::from_toml_str(fx_src).unwrap();
+        let s = Summary {
+            tool_errors: 1,
+            ..Default::default()
+        };
+        assert!(check_expectations(&fx, &s).is_empty());
+    }
+
+    #[test]
+    fn check_fails_min_tool_errors_when_unmet() {
+        let fx_src = r#"
+            id = "t"
+            prompt = "p"
+            [expect]
+            min_tool_errors = 1
+        "#;
+        let fx = Fixture::from_toml_str(fx_src).unwrap();
+        let s = Summary {
+            tool_errors: 0,
+            ..Default::default()
+        };
+        let fails = check_expectations(&fx, &s);
+        assert_eq!(fails.len(), 1);
+        assert!(fails[0].contains("tool_errors=0 < min=1"));
+    }
+
+    #[test]
+    fn check_fails_max_tool_errors_when_exceeded() {
+        let fx_src = r#"
+            id = "t"
+            prompt = "p"
+            [expect]
+            max_tool_errors = 1
+        "#;
+        let fx = Fixture::from_toml_str(fx_src).unwrap();
+        let s = Summary {
+            tool_errors: 3,
+            ..Default::default()
+        };
+        let fails = check_expectations(&fx, &s);
+        assert!(fails.iter().any(|f| f.contains("tool_errors=3 > max=1")));
     }
 
     #[test]

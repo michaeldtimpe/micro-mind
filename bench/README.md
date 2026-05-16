@@ -7,7 +7,7 @@ piece stays easy to read.
 ```
 bench/
 ├── README.md            ← you are here
-├── tasks/               ← TOML fixtures, one per task (10 today)
+├── tasks/               ← TOML fixtures, one per task (11 today)
 │   ├── 01-read-readme.toml
 │   ├── 02-list-rust-files.toml
 │   ├── 03-decline-irrelevant.toml
@@ -17,7 +17,8 @@ bench/
 │   ├── 07-grep-many-matches.toml
 │   ├── 08-bash.toml
 │   ├── 09-dedup-untriggered.toml
-│   └── 10-write-pressure-untriggered.toml
+│   ├── 10-write-pressure-untriggered.toml
+│   └── 11-write-file-placeholder.toml
 ├── runs/                ← outputs land here, one subdir per run (gitignored)
 ├── samples/             ← checked-in reference trace + fixture for CI
 │   ├── sample-trace.jsonl
@@ -33,8 +34,11 @@ The `*-untriggered` fixtures pin the *non-firing* behavior of guards
 that are structurally unreachable on `qwen25-1.5b-instruct` at temp=0
 (`SemanticDedup`, `WritePressure`). They're regression anchors — if a
 future model swap or system-prompt rev starts triggering the guard,
-the predicate flip catches it. See `lessons.md` 2026-05-16 for the
-two relevant findings.
+the predicate flip catches it. `11-write-file-placeholder` is the
+inverse: a *positive* guard-fire fixture where `write_file`'s
+placeholder-rejection guard fires deterministically and the model's
+recovery (or runaway-loop-into-Dedup fallback) is observed. See
+`lessons.md` 2026-05-16 for the three relevant findings.
 
 ## Quick start
 
@@ -90,6 +94,8 @@ max_tool_calls    = 4
 must_call_any_of  = ["read_file", "grep"]   # at least one of these must be called
 must_call_all_of  = ["read_file", "edit_file"]  # every entry must be called at least once
 must_not_call     = ["write_file", "edit_file"]
+min_tool_errors   = 1                  # at-least-N tool results with ok=false
+max_tool_errors   = 2                  # at-most-N — bounds recovery-loop behavior
 max_wall_ms       = 60000
 max_total_tokens  = 4096
 

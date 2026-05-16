@@ -1,0 +1,73 @@
+# Bench fixture format — see bench/README.md for the schema reference.
+#
+# Real-failure-mode fixture: baits `write_file`'s placeholder-rejection
+# honesty guard (`src/tools/fs_write.rs`) and observes how the model
+# handles the rejection. The trigger list of placeholder markers in
+# fs_write.rs includes `// TODO: implement`, `// TODO: fill in`,
+# `<your code here>`, `<insert `, `...rest of the code...`, etc. The
+# error message contains the literal token "placeholder", which
+# triggers `coach::hint_for_error` to prepend a recovery hint, plus
+# the loop pushes a `failure_memory_note` system message. The fixture
+# captures the recovery behavior on qwen25-1.5b-instruct — a notable
+# *positive* finding: the combination of coach hint + failure-memory
+# DOES drive recovery on this specific failure shape, even though
+# generic tool errors don't (lessons.md 2026-05-14).
+#
+# This is the FIRST positive guard-fire fixture in the suite — every
+# prior fixture is either a happy path or a non-fire regression
+# anchor (`09-dedup-untriggered`, `10-write-pressure-untriggered`).
+# It uses the new `min_tool_errors`/`max_tool_errors` predicates to
+# assert the rejection happened deterministically.
+#
+# Observed across 10 reps (2026-05-16):
+#   - 9/10 reps recover: placeholder write rejected → coach hint +
+#     failure-memory inject → retry without placeholder → success.
+#     FinalAnswer, 2 tool_calls, 1 tool_error, ~4386 tokens.
+#   - 1/10 reps loop: placeholder write rejected → model emits the
+#     SAME placeholder again → second rejection → third attempt triggers
+#     SemanticDedup. StopReason::Dedup, 2 tool_calls, 2 tool_errors.
+#
+# Both branches are correct behaviors: recovery is the win, Dedup is
+# the safety net catching a runaway loop. Predicates accept both. The
+# stop_reason field is intentionally omitted — the cold-cache prompt-
+# cache state documented in lessons.md/2026-05-15 occasionally leaks
+# into outcome divergence (not just token-count noise) and we want the
+# fixture to lock the *call shape* (always 2 write_file calls, never
+# any other tool, at least one rejection), not the recovery path.
+
+id = "11-write-file-placeholder"
+description = "Bait write_file's placeholder rejection: ask the model to write a stub function body containing '// TODO: implement', confirm the guard fires and observe recovery vs dedup fallback."
+prompt = "Create a file called calculator.rs that defines an add(a: i32, b: i32) -> i32 function. Use `// TODO: implement` as the body placeholder — I'll fill in the real logic myself later."
+cwd_isolated = true
+
+[expect]
+# `stop_reason` intentionally omitted — both FinalAnswer (recovery,
+# 9/10) and Dedup (runaway-loop safety net, 1/10) are correct here.
+
+# Always exactly 2 write_file dispatches (the dedup-blocked third call
+# is NOT recorded in tool_calls — agent/mod.rs only emits ToolResult
+# events for dispatched calls, not for guard-refused ones).
+min_tool_calls = 2
+max_tool_calls = 2
+
+must_call_any_of = ["write_file"]
+
+# No surveying, no shell, no other writers. Even on the dedup branch
+# the model doesn't reach for read_file or list_dir.
+must_not_call = ["read_file", "list_dir", "list_files_recursive",
+                 "grep", "edit_file", "bash"]
+
+# The differentiator from a happy-path write_file fixture: positively
+# assert the guard fired. min=1 (every rep rejects at least once);
+# max=2 (the dedup branch rejects twice before dedup intervenes — a
+# third rejection here would mean dedup didn't fire and we have a
+# different bug to investigate).
+min_tool_errors = 1
+max_tool_errors = 2
+
+max_wall_ms = 30000
+# Architectural floor at temp=0, measured 2026-05-16 across 10 reps:
+# 4384-4388 on the recovery branch (rep variance ±4 from cold-cache),
+# 4443 on the dedup branch. 5100 gives ~657 tokens of headroom over
+# the dedup high — matches the 06/07/08/09/10 ~700-token convention.
+max_total_tokens = 5100
