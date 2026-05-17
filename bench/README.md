@@ -7,7 +7,9 @@ piece stays easy to read.
 ```
 bench/
 ├── README.md            ← you are here
-├── tasks/               ← TOML fixtures, one per task (12 today)
+├── PREDICATES.md        ← four-axis predicate design framework + audit rubric
+├── STRESS-PROTOCOL.md   ← reps-10 cold-server discipline for envelope characterization
+├── tasks/               ← TOML fixtures, one per task (13 today)
 │   ├── 01-read-readme.toml
 │   ├── 02-list-rust-files.toml
 │   ├── 03-decline-irrelevant.toml
@@ -19,17 +21,35 @@ bench/
 │   ├── 09-dedup-untriggered.toml
 │   ├── 10-write-pressure-untriggered.toml
 │   ├── 11-write-file-placeholder.toml
-│   └── 12-edit-file-read-or-write.toml
+│   ├── 12-edit-file-read-or-write.toml
+│   └── 13a-length-write-file-bulk.toml   ← Tier-2.2a length-truncation probe
+├── archive/             ← frozen fixture shapes preserved as regression canaries
+│   └── 12-edit-file-read-or-write-pre-auto-read.toml
 ├── runs/                ← outputs land here, one subdir per run (gitignored)
 ├── samples/             ← checked-in reference trace + fixture for CI
 │   ├── sample-trace.jsonl
 │   └── sample-fixture.toml
 ├── baselines/           ← reference summaries for regression detection
 │   ├── README.md
-│   ├── main/            ← canonical, gating
+│   ├── main/            ← canonical, gating; 13 fixtures × 3 reps = 39 traces
+│   │   ├── *.jsonl + summary.json
+│   │   └── 12-stress-envelope.json  ← 30-rep envelope artifact for fixture 12
 │   └── archive/         ← historical, advisory
+├── audits/              ← versioned audit artifacts (bench-compare reports etc.)
 └── ablations.md         ← experimental knobs: KV cache, tool surface, summaries
 ```
+
+The fixture set splits into two **categories** (see `PREDICATES.md`):
+
+- **Task-success deterministic** (most fixtures): pin a single observed
+  shape every rep at temp=0 + cold-cache discipline. Predicates assert
+  the deterministic chain; a new shape is a regression.
+- **Guard-intervention characterization** (fixture 12 today, with 13a
+  as a related probe): the model produces a *stable multi-shape
+  stochastic envelope* on top of harness intervention. Predicates pin
+  the harness invariants and bound the envelope; specific shapes are
+  not asserted. The fixture comment header names the category for
+  each.
 
 The `*-untriggered` fixtures pin the *non-firing* behavior of guards
 that are structurally unreachable on `qwen25-1.5b-instruct` at temp=0
@@ -37,18 +57,28 @@ that are structurally unreachable on `qwen25-1.5b-instruct` at temp=0
 future model swap or system-prompt rev starts triggering the guard,
 the predicate flip catches it.
 
-Two *positive* guard-fire fixtures complement the anchors:
+Three *positive* guard-fire / characterization fixtures complement the
+anchors:
+
 - `11-write-file-placeholder` — `write_file`'s placeholder-rejection
   guard fires deterministically; recovery (9/10) and runaway-loop-into-
   Dedup (1/10) are both correct outcomes, predicates accept both. See
   `lessons.md` 2026-05-16.
 - `12-edit-file-read-or-write` — `read_before_write` for `edit_file`
-  fires deterministically; partial-recovery shape (1 tool_call,
-  `read_file`, model delegates the second hop back to the user) is
-  locked as the regression anchor. See `lessons.md` 2026-05-17 (both
-  entries — the initial 0/3 recovery finding was superseded the same
-  day by wiring `coach::guard_failure_memory_note` into the guard
-  path).
+  fires; harness auto-reads on guard refusal and delivers the content
+  as a synthetic tool_call/tool_result pair (b-toolresult shape).
+  4-shape envelope at 87% task success across 30 stress reps.
+  Reclassified as a guard-intervention characterization fixture; the
+  pre-auto-read shape is preserved as a regression canary at
+  `archive/12-edit-file-read-or-write-pre-auto-read.toml`. See
+  `lessons.md` 2026-05-17 (third and fourth entries) and
+  `baselines/main/12-stress-envelope.json`.
+- `13a-length-write-file-bulk` — length-truncation probe (Tier 2.2a
+  in the post-Phase-B plan). Tested whether the model produces partial
+  tool args before hitting max_tokens; 10/10 cold-server reps showed
+  the model abstracts to short args + lies in prose, so the malformed-
+  args failure family is empirically empty on 1.5 B. Diagnostic-not-
+  gating predicates. See `lessons.md` 2026-05-17 (fifth entry).
 
 ## Quick start
 
@@ -65,12 +95,47 @@ cargo run --bin bench-summarize -- --md bench/runs/<ts>/
 # 4. Validate without the model (CI-friendly).
 cargo run --bin bench-replay -- --all bench/tasks --runs bench/runs/<ts>
 
-# 5. Diff against a baseline.
+# 5. Hermetic schema-migration check (CI-friendly; no fixture matching).
+#    Asserts every JSONL trace parses cleanly and produces a Summary
+#    with internally-consistent provenance accounting. See obs/schema.md
+#    "Schema-migration compatibility surface" for the pinned fields.
+cargo run --bin bench-replay -- --migration-check bench/baselines
+
+# 6. Diff against a baseline (and produce an audit artifact).
 cargo run --bin bench-compare -- \
   --baseline bench/baselines/main/summary.json \
   --candidate bench/runs/<ts>/summary.json \
   --md /tmp/delta.md
 ```
+
+## Companion docs
+
+- **`PREDICATES.md`** — the four-axis predicate design framework
+  (kind × count × provenance × compositionality), the
+  task-success-deterministic vs guard-intervention-characterization
+  taxonomy, the guard audit rubric (local-safe + systemic-safe split),
+  and the worked example on fixture 12. Read before adding a new
+  fixture predicate.
+- **`STRESS-PROTOCOL.md`** — the reps-10-cold-server discipline for
+  characterizing a fixture's stochastic envelope before locking
+  predicates. Required reading before adding a new guard-intervention
+  characterization fixture; strongly recommended for any new recovery-
+  path fixture.
+- **`audits/`** — versioned audit artifacts from `bench-compare` runs
+  and similar regression-distribution comparisons. Generated at
+  meaningful milestones (e.g., the 2026-05-17 archive-vs-main audit
+  documenting that no pre-existing fixture regressed across the
+  Phase-B + Block-3 work).
+- **`baselines/README.md`** — the two-tier baseline convention
+  (`main/` gating; `archive/` advisory).
+- **`baselines/main/12-stress-envelope.json`** — canonical stochastic
+  envelope for fixture 12's 4-shape guard-intervention case (30 reps,
+  three cold-server stress runs). Compare a fresh stress run against
+  this to detect distribution drift.
+- **`archive/`** (sibling of `tasks/`) — frozen fixture shapes that
+  pin obsolete behavior as regression canaries. Outside `tasks/` so
+  bench-run + CI don't discover them automatically. See
+  `archive/README.md` for the regression-canary contract.
 
 ## Fixture format (`tasks/*.toml`)
 
