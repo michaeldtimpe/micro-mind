@@ -1,7 +1,7 @@
-{"payload":{"cwd":"/Users/michaeltimpe/Downloads/micro-mind","event":"session_start","model":"qwen25-1.5b-instruct","schema_v":3,"tools":["read_file","list_dir","list_files_recursive","grep","write_file","edit_file","bash"]},"ts_ms":1779024933741}
-{"payload":{"event":"chat_request","n_messages":2,"n_tools":7,"turn":0},"ts_ms":1779024933741}
-{"payload":{"completion_tokens":34,"error":null,"event":"chat_response","finish_reason":"tool_calls","native_tool_calls":1,"prompt_tokens":1071,"recovered_tool_calls":0,"total_tokens":1105,"turn":0,"wall_ms":1487},"ts_ms":1779024935229}
-{"payload":{"detail":"/Users/michaeltimpe/Downloads/micro-mind/numbers.txt","event":"guard","kind":"cold_read","turn":0},"ts_ms":1779024935229}
-{"payload":{"event":"chat_request","n_messages":4,"n_tools":7,"turn":1},"ts_ms":1779024935229}
-{"payload":{"completion_tokens":12,"error":null,"event":"chat_response","finish_reason":"stop","native_tool_calls":0,"prompt_tokens":1173,"recovered_tool_calls":0,"total_tokens":1185,"turn":1,"wall_ms":389},"ts_ms":1779024935618}
-{"payload":{"event":"stop","final_answer":"17 + 25 is 42.","reason":"FinalAnswer","turn":1,"wall_ms":1877},"ts_ms":1779024935618}
+{"payload":{"cwd":"/Users/michaeltimpe/Downloads/micro-mind","event":"session_start","model":"qwen25-1.5b-instruct","schema_v":3,"tools":["read_file","list_dir","list_files_recursive","grep","write_file","edit_file","bash"]},"ts_ms":1779029263495}
+{"payload":{"event":"chat_request","n_messages":2,"n_tools":7,"turn":0},"ts_ms":1779029263495}
+{"payload":{"completion_tokens":34,"error":null,"event":"chat_response","finish_reason":"tool_calls","native_tool_calls":1,"prompt_tokens":1071,"recovered_tool_calls":0,"total_tokens":1105,"turn":0,"wall_ms":2480},"ts_ms":1779029265976}
+{"payload":{"detail":"/Users/michaeltimpe/Downloads/micro-mind/numbers.txt","event":"guard","kind":"cold_read","turn":0},"ts_ms":1779029265976}
+{"payload":{"event":"chat_request","n_messages":4,"n_tools":7,"turn":1},"ts_ms":1779029265976}
+{"payload":{"completion_tokens":12,"error":null,"event":"chat_response","finish_reason":"stop","native_tool_calls":0,"prompt_tokens":1173,"recovered_tool_calls":0,"total_tokens":1185,"turn":1,"wall_ms":575},"ts_ms":1779029266552}
+{"payload":{"event":"stop","final_answer":"17 + 25 is 42.","reason":"FinalAnswer","turn":1,"wall_ms":3056},"ts_ms":1779029266552}

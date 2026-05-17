@@ -118,6 +118,18 @@ pub struct TaskExpect {
     /// mutating tool call.
     #[serde(default)]
     pub must_not_have_synthetic_calls: Vec<String>,
+    /// Lower bound on `model_tool_calls` (= `tool_calls` minus
+    /// `synthetic_tool_calls`). Pins compositionality on fixtures whose
+    /// `tool_calls` count is dominated by harness intervention — without
+    /// this, a fixture asserting `must_have_synthetic_calls = ["read_file"]`
+    /// would trivially pass on the no-call-FA shape (synthetic read fires,
+    /// model emits no tool call, harness intervention succeeded but no
+    /// recovery happened). Use to require ≥N model-emitted calls beyond
+    /// what the harness contributed — e.g. `min_model_tool_calls = 1` on
+    /// fixture 12 says "the model must compose at least one tool call on
+    /// the recovery turn beyond the synthetic read."
+    #[serde(default)]
+    pub min_model_tool_calls: Option<u32>,
     /// Hard upper bound on `stop.wall_ms` from the JSONL trace.
     #[serde(default)]
     pub max_wall_ms: Option<u64>,
@@ -257,6 +269,7 @@ mod tests {
             max_guard_fires = 2
             must_have_synthetic_calls = ["read_file"]
             must_not_have_synthetic_calls = ["edit_file"]
+            min_model_tool_calls = 1
             max_wall_ms = 1000
             max_total_tokens = 2000
         "#;
@@ -272,6 +285,7 @@ mod tests {
         assert_eq!(fx.expect.max_guard_fires, Some(2));
         assert_eq!(fx.expect.must_have_synthetic_calls, vec!["read_file"]);
         assert_eq!(fx.expect.must_not_have_synthetic_calls, vec!["edit_file"]);
+        assert_eq!(fx.expect.min_model_tool_calls, Some(1));
     }
 
     #[test]
