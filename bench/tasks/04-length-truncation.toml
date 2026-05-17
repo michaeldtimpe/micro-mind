@@ -30,6 +30,14 @@ must_not_call = [
     "edit_file",
     "bash",
 ]
+# The Length guard is the load-bearing exit on this prompt — without it
+# the loop would either run to TurnCap or attempt to dispatch a truncated
+# tool_call. Lock the guard fire as the positive assertion the old
+# `stop_reason = "Length"` predicate only implied. Baseline reps 0/1/2
+# all show exactly one length fire.
+must_fire_guards = ["length"]
+min_guard_fires = 1
+max_guard_fires = 1
 # Generous wall budget — generating 2048 completion tokens at Q8_0 takes
 # ~10-15 seconds on the dev rig.
 max_wall_ms = 60000

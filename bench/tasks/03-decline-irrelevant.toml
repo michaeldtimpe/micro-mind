@@ -12,6 +12,16 @@ min_tool_calls = 0
 max_tool_calls = 0
 must_not_call = ["read_file", "list_dir", "list_files_recursive", "grep",
                  "write_file", "edit_file", "bash"]
+# Lock the cold_read guard fire that makes `max_tool_calls=0` possible.
+# Without the guard, the model dispatches read_file(/dev/null) (see
+# `lessons.md` 2026-05-15) and the tool-count predicate would fail.
+# Promoting the guard fire to a positive assertion turns this fixture into
+# a regression test for `first_turn_cold_read_check` itself, not just its
+# downstream effect on tool_calls. Baseline reps 0/1/2 all show exactly
+# one cold_read fire — locking min=max=1.
+must_fire_guards = ["cold_read"]
+min_guard_fires = 1
+max_guard_fires = 1
 max_wall_ms = 15000
 # Architectural floor with the cold-read guard: ~2200 tokens.
 #   - turn 0 prompt (system + 7 tool defs + user): ~1070

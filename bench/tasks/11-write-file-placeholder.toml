@@ -65,6 +65,20 @@ must_not_call = ["read_file", "list_dir", "list_files_recursive",
 min_tool_errors = 1
 max_tool_errors = 2
 
+# Honesty-guard rejection is a `tool_errors` event, NOT a `guard` event —
+# so the canonical 3-rep baseline has 0 guard fires (recovery branch
+# only). The 1/10 dedup-branch path documented in `lessons.md`
+# 2026-05-16 produces exactly one fire (`kind=dedup`). `max_guard_fires
+# = 1` admits the dedup safety net without locking it. `dedup` is
+# deliberately omitted from `must_not_fire_guards`: the safety net is a
+# correct outcome, not a regression. What IS locked: `read_before_write`
+# and `cold_read` must never fire here — the prompt asks for a new file
+# (so the read-before-write existence-check should never trip) on turn 0
+# with a path the user named (so cold_read should never trip). A fire of
+# either signals a different bug.
+must_not_fire_guards = ["read_before_write", "cold_read"]
+max_guard_fires = 1
+
 max_wall_ms = 30000
 # Architectural floor at temp=0, measured 2026-05-16 across 10 reps:
 # 4384-4388 on the recovery branch (rep variance ±4 from cold-cache),
