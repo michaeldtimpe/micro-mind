@@ -494,3 +494,51 @@ The (b) auto-read satisfies a precondition (read the file before modifying); the
 **Affected files**: none. Documentation-only closure.
 
 ---
+
+### [2026-05-17] Guard-branch affordance audit — `length`'s malformed-args family is empirically empty on 1.5 B; disposition resolves to documented no-op
+
+**What happened**: Tier 2 of the post-Phase-B plan was the guard-branch affordance audit — apply the rubric in `bench/PREDICATES.md` (recoverable × deterministic × local-safe × systemic-safe) to each guard kind and decide a disposition. Most kinds were already settled by doctrine: `dedup` / `turn_cap` are safety brakes (PREDICATES.md doctrine rules them out as auto-recovery candidates); `cold_read` is conversational (refusal already steers correctly); `write_pressure` is structurally unreachable on this model (pinned by fixture 10 since 2026-05-16). The open question was `length` — the rubric marked it "maybe" pending probe data.
+
+The probe-first discipline from Reviewer 3 ruled out any speculative recovery design. The post-Phase-B revised plan defined three plausible failure families to disambiguate:
+- **2.2.a malformed-args**: model emits a tool call whose JSON args get cut off mid-emission.
+- **2.2.b semantic-derailment**: model writes meandering prose, runs out of tokens.
+- **2.2.c clean-cutoff**: model is producing structured output that legitimately exceeds `max_tokens`.
+
+Two of the three families turned out to already be characterized in committed fixtures:
+- **2.2.c clean-cutoff** is what fixture 04 (`length-truncation`) has been pinning since 2026-05-15: prompt asks for "count 1 to 2000," model produces numbered lines until `max_tokens=2048` is hit, no tool calls, `Length` stop reason.
+- **2.2.b semantic-derailment** is what fixture 12's `length_truncated` envelope shape captures (3/30 stress reps in `12-stress-envelope.json`): post-recovery the model writes `echo ... | bash -c 'sed -i ...'` blocks ad infinitum until `max_tokens` hits.
+
+Only **2.2.a malformed-args** lacked empirical evidence. A targeted probe fixture (`13a-length-write-file-bulk`) was designed to elicit it: the prompt asks the model to `write_file` 100 lines of verbose content, expecting either (i) partial tool args truncate (malformed-args family is real) or (ii) the model emits short args and never gets close to truncation (family is empirically empty).
+
+**Result across 10 cold-server reps, bit-identical at 2785 tokens / 1 tool call**: the model emits a `write_file` call with a *single line* of content (the literal example sentence from the prompt) and then *claims in prose* that it wrote 100 lines. Completion tokens never exceed ~100 per turn — orders of magnitude below the 2048 cap. **The malformed-args family is empirically empty on `qwen25-1.5b-instruct` at temp=0.** The model has a strong prior toward abstracting long inputs to short tool args, with the gap papered over by a confident (and false) prose claim of completion.
+
+**Root cause** (of why the family is empty): two structural facts of the 1.5 B model at this scale compound. (1) The model rarely produces tool args > ~500 chars even when explicitly asked. (2) The model would rather lie in prose about the work than produce verbose arguments. Both behaviors are documented adjacent failure modes (the 2026-05-14 "polite apology" pattern; the 2026-05-17 first-entry "prose-the-edit" pattern). Together they ensure tool args never grow large enough to be truncated by `max_tokens`. The malformed-args failure family requires a model behavior that doesn't exist at this scale.
+
+**Fix / takeaway** (length disposition = documented no-op):
+
+| Family | Empirical status | Plausible recovery | Disposition |
+|---|---|---|---|
+| 2.2.a malformed-args | Empirically empty (this probe) | N/A — family doesn't manifest | No-op (nothing to recover) |
+| 2.2.b semantic-derailment | Observed at 10% in fixture-12 envelope | "Retry with tighter `max_tokens`" produces shorter prose loop, doesn't escape derailment | No-op (no clean recovery) |
+| 2.2.c clean-cutoff | Observed in fixture 04 | Mid-token resumption requires reliable continuation, which the model isn't | No-op (no clean recovery) |
+
+None of the three families admits a recovery shape that meaningfully improves on the current handling (emit Guard{length}, push "be more concise" note for next user turn, break). The current code is the right disposition. The disposition is **encoded as a documented no-op** by:
+
+- The renamed test `guard_failure_memory_silent_for_terminal_guards` in `src/agent/coach.rs` with explicit doctrine cross-reference + the empirical record of the three-family probe.
+- The renamed test `guard_failure_memory_silent_for_safety_brake_guards` covering `dedup` and `write_pressure` per PREDICATES.md doctrine.
+- The fixture 13a baseline traces themselves, which lock the empirically-empty-malformed-args shape as a regression anchor — if a future model rev produces long tool args, the fixture's `min_tool_errors = 0, max_tool_errors = 2` accepts the new shape but the trace token count will visibly change.
+
+**Two side-findings worth flagging** (out of scope for length recovery; recorded here so future work can pick them up):
+
+1. **The model lies about long writes.** Fixture 13a's prose claims completion of 100 lines after writing 1 line. This is a *content-honesty* issue, not a length-truncation issue. Adjacent to fixture 11's placeholder rejection (which catches certain integrity failures via the tool layer) but distinct. The current honesty-guard set doesn't catch "claimed work that wasn't done" because the model's *tool call did succeed* (it wrote a valid file, just not the requested content). Closing this gap would require comparing the prose claim to the tool output — a meta-honesty guard. **Parked.** Re-open if a fixture surfaces it as a load-bearing failure.
+
+2. **`bench/PREDICATES.md`'s anti-pattern section now has empirical backing.** The hypothetical "tight fixture-12 predicate set" the doc warns against would have, in addition to failing on fixture-12's envelope, ALSO mischaracterized fixture 13a (it would have asserted some specific tool-arg shape and failed when the model abstracted). The anti-pattern is real across at least two fixtures — useful prior for future fixture authors.
+
+**Affected files**:
+- `bench/tasks/13a-length-write-file-bulk.toml` — new probe fixture; characterization-not-gating predicates per the PREDICATES.md taxonomy. Tagged in its comment header as a probe.
+- `bench/baselines/main/13a-length-write-file-bulk-rep[0-2].jsonl` — canonical 3-rep baseline (10-rep stress also exercised under `bench/runs/phase3-length-probe-13a/` but gitignored).
+- `bench/baselines/main/summary.json` — re-baselined; full suite now 39/39 (13 fixtures × 3 reps).
+- `src/agent/coach.rs` — renamed `guard_failure_memory_silent_for_unreachable_guards` → `guard_failure_memory_silent_for_safety_brake_guards`; both renamed and `guard_failure_memory_silent_for_terminal_guards` got beefed-up doctrine-cross-reference comments graduating their no-op status from "current state" to "documented per audit rubric." Reviewer 1's catch: `write_pressure` specifically needed promotion from "likely no-op" to "documented no-op."
+- `lessons.md` — this entry.
+
+---
