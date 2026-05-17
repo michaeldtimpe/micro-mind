@@ -16,6 +16,7 @@ use crate::llm::client::LlmClient;
 use crate::llm::types::{ChatMessage, Usage};
 use crate::repl::render;
 use crate::tools::cache::ToolCache;
+use crate::tools::fs_utils::canonicalize_path;
 use crate::tools::{ToolCallResult, ToolDef, dispatch};
 use micro_mind::obs::{Event, RecorderHandle};
 
@@ -114,6 +115,12 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
     // surface it (schema v2). For non-FinalAnswer terminations this is
     // best-effort — the most recent assistant prose, whatever it was.
     let mut last_assistant_content: Option<String> = None;
+    // (a) probe — throwaway measurement of post-recovery-read system-note
+    // efficacy. When read_before_write fires we remember (canon_path,
+    // original_tool); after the next successful read_file on that canon_path
+    // we push a system note nudging the model to perform the original call.
+    // Cleared on any non-matching dispatch. To be removed when Phase 0 ends.
+    let mut pending_recovery: Option<(String, String)> = None;
 
     loop {
         if turns as usize >= config::MAX_TURNS {
@@ -271,6 +278,11 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
                     {
                         state.messages.push(ChatMessage::system(memory_note));
                     }
+                    // (a) probe: arm the post-recovery-read nudge. When the
+                    // model's next dispatched call is read_file on this same
+                    // canonical path, we push a "now perform the original
+                    // call" system note. See pending_recovery comment above.
+                    pending_recovery = Some((canonicalize_path(path), tc.function.name.clone()));
                     continue;
                 }
             }
@@ -361,6 +373,32 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
             // Track reads for read-before-write.
             if call.is_ok() {
                 reads.record_read(&call.name, &call.arguments);
+            }
+
+            // (a) probe: if read_before_write armed a pending recovery and
+            // this dispatch is the recovery read on the same canonical path,
+            // push the post-recovery-read nudge so the model sees an explicit
+            // "now perform the original call" instruction before its next
+            // chat turn. Any other dispatch clears the pending state.
+            if let Some((target_path, original_tool)) = pending_recovery.take() {
+                let matched = call.is_ok()
+                    && call.name == "read_file"
+                    && call
+                        .arguments
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .map(|p| canonicalize_path(p) == target_path)
+                        .unwrap_or(false);
+                if matched {
+                    let note = format!(
+                        "You have read {target_path}. Now perform the original {original_tool} \
+                         call with the new content."
+                    );
+                    state.messages.push(ChatMessage::system(note));
+                }
+                // If not matched, drop the recovery state — any non-matching
+                // dispatch flushes it. This keeps the probe scoped to the
+                // single-hop "model reads the file the guard told it to" case.
             }
 
             // Write-pressure tracking.
