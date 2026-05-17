@@ -418,4 +418,63 @@ The orthogonality of the three is what makes the regression-canary archive fixtu
 
 **Affected files**: `src/obs/recorder.rs` (`ToolOrigin` enum + `origin` field on `ToolCall`/`ToolResult` + `SCHEMA_V` 2→3 + three round-trip tests), `src/obs/mod.rs` (re-export `ToolOrigin`), `obs/schema.md` (v3 section with provenance contract), `src/agent/mod.rs` (`AUTO_READ_LINE_CEILING` + `try_auto_read_for_rbw` + `auto_read_recovery_note` + read_before_write guard branch wiring), `src/bench/summary.rs` (synthetic counters + `must_have_synthetic_calls` / `must_not_have_synthetic_calls` checks + 7 unit tests), `src/bench/fixture.rs` (synthetic-call predicate fields + 2 tests), `bench/tasks/12-edit-file-read-or-write.toml` (post-(b) shape), `bench/tasks/04-length-truncation.toml` (wall cap recal), `bench/archive/12-edit-file-read-or-write-pre-auto-read.toml` + `bench/archive/README.md` (regression-canary contract), `bench/baselines/main/` (re-baselined 36/36).
 
+> **Update 2026-05-17 (same day, third entry chain):** the 3/3-rep baseline from this entry was a warm-cache outlier. The auto-read system-note delivery (b-current) measures at 4/10 task success across cold-server reps-10 stress runs. The chained entry below covers the b-toolresult fix, the failed Phase-C prompt probe, and the Phase-B envelope codification that ultimately landed.
+
+---
+
+### [2026-05-17] b-current is 40% at scale, b-toolresult is 87%, Phase-C prompt fix regresses to 60% — Phase-B envelope codification ships
+
+**What happened**: The prior entry's 3/3 baseline ("auto-read closes the second-hop gap") was a warm-cache outlier. A reps-10 stress on cold-restarted `llama-server` showed b-current (auto-read delivered as a system note) actually runs at **4/10 task success**, with 6/10 reps showing a new failure mode: the model receives the synthetic read content via system note, says *"Now I'll edit it"*, and then prose-writes the post-edit file content as if the edit happened — but emits no `edit_file` tool call. Identical "delegate-tool-work-via-prose" failure documented 2026-05-14 and 2026-05-17 first entry, now appearing on the recovery turn.
+
+The lesson: **a 3-rep baseline characterizes server-prompt-cache-state more than it characterizes the stochastic envelope at temp=0.** The cold-cache vs warm-cache delta documented 2026-05-15 leaks into completion-side bytes (per 2026-05-16 fixture-11 lesson), and when the failure mode has two stable continuations the 3-rep window can land entirely on one branch by chance. Always reps-10 cold-server stress a recovery-fixture before committing the canonical baseline.
+
+**Probe sequence + resolution**:
+
+Three deliveries tried in order:
+- **b-current (system note)**: 4/10. Truncated-branch model proses post-edit content.
+- **b-toolresult (synthetic `tool_call`/`tool_result` pair)**: 26/30 = 87% across 30 stress reps. Four stable shapes:
+  - `clean` (47%): synth read + model edit → FinalAnswer, 4276-4314 tokens, 3-12s wall.
+  - `verify_read` (40%): synth read + model edit + post-edit verification read → FinalAnswer, 6299-6355 tokens, 9-15s wall.
+  - `length_truncated` (10%): synth read + model writes `echo ... | bash -c 'sed -i ...'` snippets inside markdown code blocks → 2048 completion tokens → Length stop. New failure family — same prose-as-action root cause, different surface.
+  - `no_call_fa` (3%): synth read + model prose-displays post-edit content in markdown → FinalAnswer with no edit_file emission. Same surface as b-current's truncated branch but rarer.
+
+  The format change validated the hypothesis: chat-template "after-tool_result" continuation reliably elicits a tool_call (87% vs b-current's 40%). The remaining 13% is the BFCL multi-turn floor manifesting on the *which-tool* axis instead of the *tool-vs-prose* axis. The model picks a wrong tool channel (prose-bash code block or prose-display) in those reps.
+
+- **Phase-C prompt rule probe** (negative-general framing per reviewer convergence — `*"Markdown code blocks in your reply only display text; they do not execute. To modify a file, emit a tool call — do not output a shell pipeline (e.g. sed, awk) as a code block in your reply."*`): 6/10 task success. The rule successfully eliminated the bash-loop AND verify-read shapes but **redistributed failure mass into no_call_fa** (3% → 40%). The model went from "I'll write sed commands" to "okay, I'll just display the new content and stop" — same prose-as-action failure family, different surface that the rule didn't catch. Reverted; prompt rules at 1.5 B parameters can suppress specific surfaces but cannot eliminate the underlying continuation-mode failure.
+
+**Root cause** (of why prompt rules can't close the remaining 13%): the failure mode isn't "model doesn't know to call edit_file." The 87% of b-toolresult reps show the model *can* compose the recovery tool call. The 13% failure modes are the model probabilistically choosing wrong output channels — markdown for action, prose for display — at the precise tokenization position where the chat template would otherwise yield a `tool_call`. That decision is logit-level; system prompt rules influence the *distribution* but don't eliminate the long tail.
+
+**Resolution (Phase B)**: codify the 87% envelope with compositionality preserved. Fixture 12 becomes a **guard-intervention characterization fixture** (new category, per Reviewer 3 framing), distinguished from the **task-success deterministic fixtures** (01–08, 11) that pin single deterministic shapes. The job of fixture 12 is now: "auto-read fires correctly + the model composes ≥1 tool call beyond the synthetic read." Predicate updates:
+
+- `min_tool_calls = 2`, `max_tool_calls = 3` — admits clean + verify_read, rejects no_call_fa and length_truncated which have only the synthetic read at tool_calls=1.
+- `min_model_tool_calls = 1` — **load-bearing compositionality predicate, new in this commit**. Without it, the must_have_synthetic_calls predicate would trivially pass on no_call_fa (synth read fires, model emits nothing, harness intervention succeeded but no recovery happened). Reviewer 3's key catch.
+- `must_have_synthetic_calls = ["read_file"]`, `must_not_have_synthetic_calls = ["edit_file", "write_file"]` — provenance invariants.
+- `must_not_call` keeps `bash` forbidden — real bash-tool dispatch is a different failure class than the prose-bash code blocks (those don't dispatch bash; they hit max_tokens in markdown text). Reviewer 3's second catch.
+- `stop_reason` dropped — Length-truncated and no_call_fa reps both have valid `stop_reason` values; the `min_model_tool_calls` predicate is what rejects them.
+- `max_total_tokens = 7000`, `max_wall_ms = 75000` — generous to admit the verify shape's 6355-token p95 and the length-truncated 69-second wall.
+
+**Predicate design observation**: the kind × count × provenance three-axis split landed in the prior commit is now joined by a fourth implicit axis — **compositionality** — via `min_model_tool_calls`. The four-axis design is what lets fixture 12 distinguish "harness intervention succeeded" from "model genuinely composed a recovery action" without conflating them. Future intervention-characterization fixtures should plan for these four axes from the start.
+
+**Fixture taxonomy** (new, surfaces in `bench/README.md`): bench fixtures now split into two categories:
+- **task-success deterministic**: pin a single observable shape every rep (most fixtures). Failure = behavioral drift.
+- **guard-intervention characterization**: pin the *invariants* of harness behavior across a stable multi-shape envelope (fixture 12 today). Failure = invariant violation OR distribution drift outside the documented envelope. The envelope itself is persisted at `bench/baselines/main/<fixture-id>-stress-envelope.json` so future regressions can compare.
+
+The principle: when the model has multiple stable continuations at the BFCL multi-turn floor and the harness intervention is the load-bearing correctness layer, the right fixture is one that asserts the harness invariants and bounds the envelope — not one that pretends the model produces a single shape it doesn't.
+
+**Stress envelope persisted**: `bench/baselines/main/12-stress-envelope.json` captures the 30-rep aggregate from three cold-server stress runs. Future regression checks: aggregate distribution should match within reasonable error; if `task_success_rate` drops below ~70% or a fifth shape appears, investigate.
+
+**Strategic concern Reviewer 3 surfaced explicitly**: this commit moves fixture 12 from "task completion determinism" to "bounded intervention observability." Defensible (the harness IS what's correct here, not the model), but a real philosophical shift. Future contributors reading "fixture 12 passes" need to understand the meaning is *"the auto-read fired and the model did something resembling work,"* not *"the task completed deterministically."* The category note in the fixture comment header is the contract.
+
+**What we did not do — and why**:
+- Did not pursue b-strict (harness replays `edit_file` with captured args). Crosses the authorship boundary Reviewer 3 flagged on fixture 11's content-recovery rejection. Would likely give ~100% task success but at the cost of changing the harness's authorship semantics from "synthesize precondition affordances" to "replay model intent as harness action." Not worth it for 13% more task success.
+- Did not iterate the prompt fix beyond the negative-general first attempt. Reviewer-3 explicit: "ship or bail." Adding a positive nudge ("after a tool result, your next step is usually another tool call") would be prompt magic — non-local effects and brittle.
+
+**Affected files**:
+- `src/agent/mod.rs` — b-toolresult delivery: replaces `auto_read_recovery_note` (system-note builder) with `synthetic_read_call_message` (fabricated assistant `tool_call(read_file)`); push the synthetic content as a paired `tool_result` instead of a system message. The old shape is fully removed, not toggled.
+- `src/llm/types.rs` — no change (existing `ToolCall` / `FunctionCall` already public).
+- `src/bench/summary.rs` — `model_tool_calls: u32` derived field on `Summary` (`tool_calls` minus `synthetic_tool_calls`) + `min_model_tool_calls` predicate check + 4 new tests.
+- `src/bench/fixture.rs` — `min_model_tool_calls: Option<u32>` on `TaskExpect` + parse-test extension.
+- `bench/tasks/12-edit-file-read-or-write.toml` — Phase-B predicates, category note in header, narrative of the three-delivery arc.
+- `bench/baselines/main/` — re-baselined fixture 12 with b-toolresult traces (1 verify + 2 clean shapes out of 3 reps); full suite 36/36; `12-stress-envelope.json` added as the canonical 30-rep regression artifact.
+
 ---
