@@ -239,24 +239,60 @@ mod tests {
 
     #[test]
     fn guard_failure_memory_silent_for_cold_read() {
-        // cold_read's refusal already says "Answer the user directly" —
-        // adding a "do not repeat" nudge on top would be redundant and
-        // risks unlocking the 03-decline-irrelevant non-call shape.
+        // Documented no-op per bench/PREDICATES.md guard audit rubric:
+        // cold_read's refusal text already says "Answer the user directly"
+        // — adding a "do not repeat" nudge on top would be redundant and
+        // risks unlocking the 03-decline-irrelevant non-call shape. The
+        // refusal itself is the correct affordance; no auto-recovery is
+        // appropriate.
         assert!(guard_failure_memory_note("read_file", "cold_read").is_none());
     }
 
     #[test]
-    fn guard_failure_memory_silent_for_unreachable_guards() {
-        // 09/10 pin these as non-fire anchors. A memory note here would
-        // be untestable and risks future unlocks.
+    fn guard_failure_memory_silent_for_safety_brake_guards() {
+        // Documented no-op per bench/PREDICATES.md doctrine: "Guards that
+        // exist as safety brakes against runaway model behavior must not
+        // have auto-recovery affordances." Auto-recovery on a safety
+        // brake is "ignore the brake" — defeats the brake's purpose.
+        //
+        // dedup fires on consecutive-identical-call loops; the only
+        // mechanically-resolving "recovery" is exiting the loop, which
+        // dedup already does. write_pressure fires on a post-write
+        // zero-byte streak suggesting the model has nothing useful left
+        // to do; same reasoning — recovery is exit. Both are pinned as
+        // structurally-unreachable on 1.5 B by fixtures 09 and 10
+        // respectively (`lessons.md` 2026-05-16), so the absence of
+        // auto-recovery is also empirically untestable on this model
+        // scale even if it were architecturally permitted.
         assert!(guard_failure_memory_note("read_file", "dedup").is_none());
         assert!(guard_failure_memory_note("list_dir", "write_pressure").is_none());
     }
 
     #[test]
     fn guard_failure_memory_silent_for_terminal_guards() {
-        // length / turn_cap end the loop — a memory note can't influence
-        // anything because there is no next turn.
+        // Documented no-op per bench/PREDICATES.md guard audit rubric:
+        // length and turn_cap are terminal — both end the loop, leaving
+        // no next iteration where a memory note could influence
+        // anything. turn_cap is additionally a safety brake (same
+        // doctrine as dedup / write_pressure above).
+        //
+        // For length specifically: the Tier-2.2 probe (fixture
+        // 13a-length-write-file-bulk + the fixture-12 stress envelope
+        // covering semantic-derailment + fixture 04 covering
+        // clean-cutoff) characterized the three plausible failure
+        // families. None admits a clean auto-recovery shape:
+        //   - malformed-args: empirically empty on 1.5 B (model
+        //     abstracts long inputs to short tool args; probe 13a
+        //     showed 10/10 reps at <3000 tokens with no length fire).
+        //   - semantic-derailment: model is in a prose loop;
+        //     "retry with tighter max_tokens" produces shorter loop.
+        //   - clean-cutoff: model is producing legitimate output that
+        //     exceeded max_tokens; resumption requires reliable
+        //     mid-token continuation which the model isn't.
+        // Current handling (push "be more concise" note for the next
+        // user turn, break) is the correct disposition. See
+        // `lessons.md` 2026-05-17 (fifth entry) for the empirical
+        // record.
         assert!(guard_failure_memory_note("read_file", "length").is_none());
         assert!(guard_failure_memory_note("read_file", "turn_cap").is_none());
     }
