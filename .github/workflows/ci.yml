@@ -46,6 +46,17 @@ jobs:
         run: cargo run --bin bench-replay -- --fixture bench/samples/sample-fixture.toml --trace bench/samples/sample-trace.jsonl
       - name: Summarize sample trace
         run: cargo run --bin bench-summarize -- --md bench/samples/sample-trace.jsonl
+      # Schema-migration check — GATES the build. Every committed JSONL
+      # trace (archive + main) must (a) parse under the current schema
+      # without errors and (b) produce a Summary whose model/synthetic
+      # tool-call accounting is internally consistent. This is the
+      # hermetic deserialization contract — distinct from the semantic
+      # replay below, which checks predicate evaluation against fixtures
+      # (and is advisory for the archive baselines whose fixtures have
+      # moved). See `obs/schema.md` v3 "Replay invariants" and
+      # `bench/PREDICATES.md` for the pinned-vs-not-pinned surface.
+      - name: Schema migration check (gating — archive + main parse cleanly)
+        run: cargo run --bin bench-replay -- --migration-check bench/baselines
       # Canonical baseline replay — GATES the build. The committed traces
       # under bench/baselines/main/ must satisfy every fixture predicate.
       # When you re-capture (bench-run … --out bench/baselines/main), commit
