@@ -13,7 +13,7 @@ use std::time::Instant;
 
 use crate::config;
 use crate::llm::client::LlmClient;
-use crate::llm::types::{ChatMessage, Usage};
+use crate::llm::types::{ChatMessage, FunctionCall, ToolCall, Usage};
 use crate::repl::render;
 use crate::tools::cache::ToolCache;
 use crate::tools::{ToolCallResult, ToolDef, dispatch};
@@ -213,21 +213,31 @@ fn try_auto_read_for_rbw(
     Some(call)
 }
 
-/// Build the system-note body that delivers the auto-read content to the
-/// model alongside an explicit retry instruction. The harness's
-/// counterfactual-visibility marker per Reviewer 3: the trace already
-/// shows the guard fired (`Guard` event) and the harness intervened
-/// (synthetic `ToolCall`/`ToolResult`); this note tells the *model* the
-/// same story in the conversation.
-fn auto_read_recovery_note(path: &str, content: &str) -> String {
-    format!(
-        "Guard read_before_write performed an automatic bounded read of {path}. \
-         The content is shown between the markers below. Now retry the original \
-         tool call with this content visible in scope.\n\
-         --- begin {path} ---\n\
-         {content}\n\
-         --- end {path} ---"
-    )
+/// Fabricate an assistant message carrying a synthetic `tool_call` so the
+/// auto-read content can be delivered to the model as a proper tool_result
+/// (paired with this fabricated call) rather than as a system note. The
+/// chat template's "after a tool_result" continuation reliably leads to
+/// another tool_call on Qwen-style templates; the "after a system note"
+/// continuation is biased toward emit-prose. b-toolresult probes whether
+/// this format change alone shifts the model from prose-the-edit mode to
+/// emit-edit_file mode on the recovery turn.
+fn synthetic_read_call_message(tool_call_id: &str, path: &str) -> ChatMessage {
+    let arguments = serde_json::to_string(&serde_json::json!({ "path": path }))
+        .unwrap_or_else(|_| "{}".to_string());
+    ChatMessage {
+        role: "assistant".into(),
+        content: None,
+        name: None,
+        tool_call_id: None,
+        tool_calls: vec![ToolCall {
+            id: tool_call_id.to_string(),
+            kind: "function".into(),
+            function: FunctionCall {
+                name: "read_file".into(),
+                arguments,
+            },
+        }],
+    }
 }
 
 /// Process one user message: chat → tool dispatch → loop → final answer or guard.
@@ -387,16 +397,26 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
                         detail: Some(path.to_string()),
                     });
                     render::guard(&format!("read-before-write → {}", path));
-                    // Auto-read on guard refusal (lessons.md 2026-05-17 option
-                    // b). Collapses the two-hop chain (refusal → model reads
-                    // → model retries) into one hop at the harness layer.
-                    // Preserves counterfactual visibility by always pushing
-                    // the refusal note as the tool_result for the blocked
-                    // call AND, on success, pushing the auto-read content as
-                    // a separate system message. Falls back to the existing
-                    // refusal+failure-memory shape if the auto-read fails or
-                    // hits the line ceiling. Provenance is recorded via the
-                    // synthetic `ToolCall`/`ToolResult` events (schema v3).
+                    // Auto-read on guard refusal — b-toolresult shape (the
+                    // reps-10 stress run on b-current at 4/10 task success
+                    // showed the model's "after a system note" continuation
+                    // prose-the-edit 6/10 of the time. b-toolresult delivers
+                    // the synthetic content as a proper tool_result paired
+                    // with a fabricated assistant tool_call, so the chat
+                    // template sees the natural tool-loop continuation
+                    // pattern instead of a free-form system note.)
+                    //
+                    // Conversation shape on success:
+                    //   assistant: tool_call(edit_file, id=A)   [blocked]
+                    //   tool[A]:   refusal_note                 [counterfactual visibility]
+                    //   assistant: tool_call(read_file, id=B)   [fabricated]
+                    //   tool[B]:   <auto-read content>          [synthetic tool_result]
+                    //   (next turn — model)
+                    //
+                    // Counterfactual visibility is preserved: the refusal
+                    // note still answers the blocked call; the synthetic
+                    // pair is recorded in the trace with
+                    // origin=SyntheticGuardRecovery via try_auto_read_for_rbw.
                     state
                         .messages
                         .push(ChatMessage::tool_result(&tc.id, &tc.function.name, &note));
@@ -411,10 +431,12 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
                     if let Some(synth_call) = synth {
                         state
                             .messages
-                            .push(ChatMessage::system(auto_read_recovery_note(
-                                path,
-                                &synth_call.result,
-                            )));
+                            .push(synthetic_read_call_message(&synth_call.id, path));
+                        state.messages.push(ChatMessage::tool_result(
+                            &synth_call.id,
+                            "read_file",
+                            &synth_call.result,
+                        ));
                         // Mark the path as read so the model's retry of
                         // `write_file`/`edit_file` doesn't re-trigger the
                         // guard. Without this, the next turn would loop
