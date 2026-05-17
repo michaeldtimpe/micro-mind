@@ -297,6 +297,7 @@ mod tests {
                 bytes_out: 200,
                 cached: false,
                 error: None,
+                origin: None,
             }),
             te(Event::ToolResult {
                 turn: 0,
@@ -307,6 +308,7 @@ mod tests {
                 bytes_out: 100,
                 cached: true,
                 error: None,
+                origin: None,
             }),
             te(Event::Stop {
                 turn: 1,

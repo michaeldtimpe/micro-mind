@@ -10,6 +10,27 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Provenance of a `ToolCall` / `ToolResult` event. Added in schema v3 so
+/// downstream consumers can distinguish tool calls emitted by the model
+/// from tool calls fabricated by the harness as part of guard recovery
+/// (today: auto-read on `read_before_write`).
+///
+/// On the wire the field is optional and omitted when the call is
+/// model-originated — keeps v1/v2 traces parsing cleanly and v3 traces
+/// adding no bytes on the common path. A missing `origin` MUST be treated
+/// as `Model` by all consumers. See `obs/schema.md` (v3) for the contract.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ToolOrigin {
+    /// Tool call originated from the model's response. The wire form is
+    /// `None` (field omitted), not this variant — this is only here so the
+    /// enum is exhaustive for analysis code that wants to be explicit.
+    Model,
+    /// Harness-injected tool call. The `guard` field names the guard whose
+    /// fire triggered the auto-recovery (e.g. `"read_before_write"`).
+    SyntheticGuardRecovery { guard: String },
+}
+
 /// All recordable event payloads.
 ///
 /// Field naming follows the OpenAI / llama-server vocabulary where possible
@@ -44,6 +65,10 @@ pub enum Event {
         name: String,
         arguments: Value,
         tool_call_id: String,
+        /// Provenance — see `ToolOrigin`. Omitted when model-originated
+        /// (preserves wire compat with v1/v2 traces). Added in schema v3.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin: Option<ToolOrigin>,
     },
     /// A tool dispatch finished (or hit the guard layer).
     ToolResult {
@@ -55,6 +80,10 @@ pub enum Event {
         bytes_out: usize,
         cached: bool,
         error: Option<String>,
+        /// Provenance — see `ToolOrigin`. Omitted when model-originated
+        /// (preserves wire compat with v1/v2 traces). Added in schema v3.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin: Option<ToolOrigin>,
     },
     /// A harness guard fired (dedup, read-before-write, write-pressure, turn-cap).
     Guard {
@@ -86,7 +115,18 @@ pub enum Event {
 }
 
 /// Wire-format version of the JSONL event stream.
-pub const SCHEMA_V: u32 = 2;
+///
+/// History:
+///   v1 — initial release.
+///   v2 — `stop.final_answer` + `session_start.schema_v` added (both
+///        `#[serde(default, skip_serializing_if = "Option::is_none")]`).
+///   v3 — `tool_call.origin` + `tool_result.origin` added (typed
+///        `ToolOrigin`, same default-skip pattern). Marks the harness
+///        gaining authority to fabricate tool calls on guard recovery —
+///        a semantic-capability change worth pinning at the version
+///        level so consumers can distinguish "field absent = model
+///        originated" from "field absent = old trace".
+pub const SCHEMA_V: u32 = 3;
 
 /// Public recorder interface. `record(...)` must be cheap and infallible
 /// from the caller's perspective.
@@ -236,6 +276,7 @@ mod tests {
             bytes_out: 42,
             cached: false,
             error: None,
+            origin: None,
         });
         drop(r); // flush
         let body = read_to_string(&path).expect("read");
@@ -265,5 +306,72 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(body.trim()).unwrap();
         assert!(v["ts_ms"].as_u64().is_some());
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn model_origin_field_is_omitted_on_wire() {
+        // The common path emits `origin: None`; the wire form must contain
+        // no `origin` key, preserving byte-level compat with v1/v2 traces
+        // for predicates that don't assert provenance.
+        let path = tmpfile("origin_omit");
+        let r = JsonlRecorder::open_path(&path).expect("open");
+        r.record(Event::ToolCall {
+            turn: 0,
+            name: "read_file".into(),
+            arguments: serde_json::json!({"path": "x"}),
+            tool_call_id: "t1".into(),
+            origin: None,
+        });
+        drop(r);
+        let body = read_to_string(&path).unwrap();
+        let v: serde_json::Value = serde_json::from_str(body.trim()).unwrap();
+        assert_eq!(v["payload"]["event"], "tool_call");
+        assert!(
+            v["payload"].get("origin").is_none(),
+            "model-originated calls must omit `origin`: got {}",
+            v["payload"]
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn synthetic_origin_serializes_with_guard_field() {
+        // Harness-injected calls carry their provenance verbatim. The wire
+        // shape is `{"kind":"synthetic_guard_recovery","guard":"<kind>"}`.
+        let path = tmpfile("origin_syn");
+        let r = JsonlRecorder::open_path(&path).expect("open");
+        r.record(Event::ToolCall {
+            turn: 0,
+            name: "read_file".into(),
+            arguments: serde_json::json!({"path": "x"}),
+            tool_call_id: "t1".into(),
+            origin: Some(ToolOrigin::SyntheticGuardRecovery {
+                guard: "read_before_write".into(),
+            }),
+        });
+        drop(r);
+        let body = read_to_string(&path).unwrap();
+        let v: serde_json::Value = serde_json::from_str(body.trim()).unwrap();
+        let origin = &v["payload"]["origin"];
+        assert_eq!(origin["kind"], "synthetic_guard_recovery");
+        assert_eq!(origin["guard"], "read_before_write");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn pre_v3_trace_parses_without_origin_field() {
+        // Round-trip a hand-rolled pre-v3 ToolResult — `origin` missing from
+        // the JSON must deserialize cleanly to `origin: None`. This pins the
+        // backward-compat contract for `bench-replay` against archived
+        // baselines.
+        let pre_v3 = r#"{"event":"tool_result","turn":0,"name":"read_file","tool_call_id":"x","ok":true,"wall_ms":5,"bytes_out":42,"cached":false,"error":null}"#;
+        let evt: Event = serde_json::from_str(pre_v3).expect("pre-v3 trace must parse");
+        match evt {
+            Event::ToolResult { origin, name, .. } => {
+                assert!(origin.is_none(), "missing origin must default to None");
+                assert_eq!(name, "read_file");
+            }
+            _ => panic!("expected ToolResult"),
+        }
     }
 }
