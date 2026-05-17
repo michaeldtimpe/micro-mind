@@ -1,10 +1,10 @@
-{"payload":{"cwd":"/Users/michaeltimpe/Downloads/micro-mind/bench/baselines/main/.scratch-06-edit-file-rep2","event":"session_start","model":"qwen25-1.5b-instruct","schema_v":3,"tools":["read_file","list_dir","list_files_recursive","grep","write_file","edit_file","bash"]},"ts_ms":1779029519199}
-{"payload":{"event":"chat_request","n_messages":2,"n_tools":7,"turn":0},"ts_ms":1779029519199}
-{"payload":{"completion_tokens":57,"error":null,"event":"chat_response","finish_reason":"tool_calls","native_tool_calls":2,"prompt_tokens":1138,"recovered_tool_calls":0,"total_tokens":1195,"turn":0,"wall_ms":3187},"ts_ms":1779029522387}
-{"payload":{"arguments":{"path":"story.txt"},"event":"tool_call","name":"read_file","tool_call_id":"tD8Uc1scm3ZcLemSFj1rqglY90QdsFbR","turn":0},"ts_ms":1779029522387}
-{"payload":{"bytes_out":75,"cached":false,"error":null,"event":"tool_result","name":"read_file","ok":true,"tool_call_id":"tD8Uc1scm3ZcLemSFj1rqglY90QdsFbR","turn":0,"wall_ms":0},"ts_ms":1779029522387}
-{"payload":{"arguments":{"new":"sleepy cat","old":"lazy dog","path":"story.txt"},"event":"tool_call","name":"edit_file","tool_call_id":"ZQ8aw0xGObiyAjIbltuCZRrWnacNVtgA","turn":0},"ts_ms":1779029522387}
-{"payload":{"bytes_out":39,"cached":false,"error":null,"event":"tool_result","name":"edit_file","ok":true,"tool_call_id":"ZQ8aw0xGObiyAjIbltuCZRrWnacNVtgA","turn":0,"wall_ms":8},"ts_ms":1779029522395}
-{"payload":{"event":"chat_request","n_messages":7,"n_tools":7,"turn":1},"ts_ms":1779029522395}
-{"payload":{"completion_tokens":11,"error":null,"event":"chat_response","finish_reason":"stop","native_tool_calls":0,"prompt_tokens":1301,"recovered_tool_calls":0,"total_tokens":1312,"turn":1,"wall_ms":551},"ts_ms":1779029522947}
-{"payload":{"event":"stop","final_answer":"The quick brown fox jumps over the sleepy cat.","reason":"FinalAnswer","turn":1,"wall_ms":3747},"ts_ms":1779029522947}
+{"payload":{"cwd":"/Users/michaeltimpe/Downloads/micro-mind/bench/baselines/main/.scratch-06-edit-file-rep2","event":"session_start","model":"qwen25-1.5b-instruct","schema_v":3,"tools":["read_file","list_dir","list_files_recursive","grep","write_file","edit_file","bash"]},"ts_ms":1779039834242}
+{"payload":{"event":"chat_request","n_messages":2,"n_tools":7,"turn":0},"ts_ms":1779039834242}
+{"payload":{"completion_tokens":57,"error":null,"event":"chat_response","finish_reason":"tool_calls","native_tool_calls":2,"prompt_tokens":1138,"recovered_tool_calls":0,"total_tokens":1195,"turn":0,"wall_ms":2323},"ts_ms":1779039836566}
+{"payload":{"arguments":{"path":"story.txt"},"event":"tool_call","name":"read_file","tool_call_id":"kLo913pJxsue2r079u94mEscTZ3gOLN6","turn":0},"ts_ms":1779039836566}
+{"payload":{"bytes_out":75,"cached":false,"error":null,"event":"tool_result","name":"read_file","ok":true,"tool_call_id":"kLo913pJxsue2r079u94mEscTZ3gOLN6","turn":0,"wall_ms":0},"ts_ms":1779039836566}
+{"payload":{"arguments":{"new":"sleepy cat","old":"lazy dog","path":"story.txt"},"event":"tool_call","name":"edit_file","tool_call_id":"Wii582AQ6xHHlFgKEtUVUVX7g2n799Qd","turn":0},"ts_ms":1779039836566}
+{"payload":{"bytes_out":39,"cached":false,"error":null,"event":"tool_result","name":"edit_file","ok":true,"tool_call_id":"Wii582AQ6xHHlFgKEtUVUVX7g2n799Qd","turn":0,"wall_ms":7},"ts_ms":1779039836574}
+{"payload":{"event":"chat_request","n_messages":7,"n_tools":7,"turn":1},"ts_ms":1779039836574}
+{"payload":{"completion_tokens":11,"error":null,"event":"chat_response","finish_reason":"stop","native_tool_calls":0,"prompt_tokens":1301,"recovered_tool_calls":0,"total_tokens":1312,"turn":1,"wall_ms":337},"ts_ms":1779039836912}
+{"payload":{"event":"stop","final_answer":"The quick brown fox jumps over the sleepy cat.","reason":"FinalAnswer","turn":1,"wall_ms":2669},"ts_ms":1779039836912}

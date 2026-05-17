@@ -1,8 +1,8 @@
-{"payload":{"cwd":"/Users/michaeltimpe/Downloads/micro-mind/bench/baselines/main/.scratch-05-write-from-scratch-rep1","event":"session_start","model":"qwen25-1.5b-instruct","schema_v":3,"tools":["read_file","list_dir","list_files_recursive","grep","write_file","edit_file","bash"]},"ts_ms":1779029498872}
-{"payload":{"event":"chat_request","n_messages":2,"n_tools":7,"turn":0},"ts_ms":1779029498872}
-{"payload":{"completion_tokens":29,"error":null,"event":"chat_response","finish_reason":"tool_calls","native_tool_calls":1,"prompt_tokens":1123,"recovered_tool_calls":0,"total_tokens":1152,"turn":0,"wall_ms":2233},"ts_ms":1779029501105}
-{"payload":{"arguments":{"content":"hello world\n","path":"./hello.txt"},"event":"tool_call","name":"write_file","tool_call_id":"OuCw5Cqco7S43ASHEIAY6z2Nnes8bRWQ","turn":0},"ts_ms":1779029501105}
-{"payload":{"bytes_out":37,"cached":false,"error":null,"event":"tool_result","name":"write_file","ok":true,"tool_call_id":"OuCw5Cqco7S43ASHEIAY6z2Nnes8bRWQ","turn":0,"wall_ms":8},"ts_ms":1779029501114}
-{"payload":{"event":"chat_request","n_messages":5,"n_tools":7,"turn":1},"ts_ms":1779029501114}
-{"payload":{"completion_tokens":27,"error":null,"event":"chat_response","finish_reason":"stop","native_tool_calls":0,"prompt_tokens":1204,"recovered_tool_calls":0,"total_tokens":1231,"turn":1,"wall_ms":990},"ts_ms":1779029502105}
-{"payload":{"event":"stop","final_answer":"The file hello.txt has been created in the current directory with the content 'hello world'. It contains exactly one line of text.","reason":"FinalAnswer","turn":1,"wall_ms":3232},"ts_ms":1779029502105}
+{"payload":{"cwd":"/Users/michaeltimpe/Downloads/micro-mind/bench/baselines/main/.scratch-05-write-from-scratch-rep1","event":"session_start","model":"qwen25-1.5b-instruct","schema_v":3,"tools":["read_file","list_dir","list_files_recursive","grep","write_file","edit_file","bash"]},"ts_ms":1779039811801}
+{"payload":{"event":"chat_request","n_messages":2,"n_tools":7,"turn":0},"ts_ms":1779039811802}
+{"payload":{"completion_tokens":29,"error":null,"event":"chat_response","finish_reason":"tool_calls","native_tool_calls":1,"prompt_tokens":1123,"recovered_tool_calls":0,"total_tokens":1152,"turn":0,"wall_ms":1319},"ts_ms":1779039813121}
+{"payload":{"arguments":{"content":"hello world\n","path":"./hello.txt"},"event":"tool_call","name":"write_file","tool_call_id":"ui5HtDRqHIcH5AAMXIRTGbzw6c57o2x5","turn":0},"ts_ms":1779039813121}
+{"payload":{"bytes_out":37,"cached":false,"error":null,"event":"tool_result","name":"write_file","ok":true,"tool_call_id":"ui5HtDRqHIcH5AAMXIRTGbzw6c57o2x5","turn":0,"wall_ms":6},"ts_ms":1779039813128}
+{"payload":{"event":"chat_request","n_messages":5,"n_tools":7,"turn":1},"ts_ms":1779039813128}
+{"payload":{"completion_tokens":27,"error":null,"event":"chat_response","finish_reason":"stop","native_tool_calls":0,"prompt_tokens":1204,"recovered_tool_calls":0,"total_tokens":1231,"turn":1,"wall_ms":608},"ts_ms":1779039813737}
+{"payload":{"event":"stop","final_answer":"The file hello.txt has been created in the current directory with the content 'hello world'. It contains exactly one line of text.","reason":"FinalAnswer","turn":1,"wall_ms":1935},"ts_ms":1779039813737}

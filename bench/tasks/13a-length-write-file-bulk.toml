@@ -1,0 +1,87 @@
+# Bench fixture format — see bench/README.md for the schema reference.
+#
+# Category: GUARD-INTERVENTION CHARACTERIZATION (probe).
+#
+# Length-truncation probe — the "malformed-args" failure family from
+# the post-Phase-B length-recovery investigation (Tier 2.2.a in the
+# revised plan; see bench/PREDICATES.md guard audit rubric).
+#
+# Question this probe answers empirically:
+#   "Does the 1.5 B model produce partial tool_call arguments before
+#    hitting max_tokens (the malformed-args failure family), or does
+#    it produce prose instead (collapsing into the semantic-derailment
+#    or clean-cutoff families)?"
+#
+# Pre-decided interpretations:
+#   - If reps show stop_reason=Length with partial tool_call args
+#     visible in the trace (native_tool_calls=1, completion_tokens
+#     at max, model_tool_calls=0 or 1 with truncated arguments JSON):
+#     the malformed-args family is real on this scale. Auto-recovery
+#     might be tractable — retry the tool_call with the model's
+#     intended args reconstructed from the prompt + tighter
+#     max_tokens.
+#   - If reps show stop_reason=Length with model_tool_calls=0 and
+#     completion_tokens at max but no tool_call attempt in the
+#     truncated reply: the model produced prose instead of tool args.
+#     Malformed-args family is empirically empty on 1.5 B at temp=0.
+#     Auto-recovery is not justified.
+#   - If reps show no length-truncation at all (model emits short
+#     successful write_file with shortened content): the prompt doesn't
+#     reliably trigger length on this model. Probe is inconclusive;
+#     redesign or accept that length is hard to bait at scale.
+#
+# Probe trigger: ask the model to write_file with a long content body.
+# The model has to produce a substantial argument string in the
+# tool_call. If max_tokens=2048 is exceeded before the JSON closes,
+# the args truncate mid-emission.
+#
+# Diagnostic-not-gating: predicates admit ALL observed outcomes. The
+# load-bearing assertion is that this fixture characterizes
+# length-behavior on a write-heavy prompt — failure shapes are the
+# data, not pass/fail criteria.
+
+id = "13a-length-write-file-bulk"
+description = "Length-truncation probe (malformed-args family): write_file with a long content body. Tests whether the 1.5 B model produces partial tool_call args before hitting max_tokens, or collapses to prose. Diagnostic — not a regression gate; all observed shapes are admitted."
+prompt = "Write a file at output.txt containing exactly 100 lines, where each line N is the literal text 'line N: this is the verbose body content used by the length-truncation probe to test whether the 1.5 B model produces partial tool_call arguments before max_tokens is reached'. Use the write_file tool with the complete content."
+cwd_isolated = true
+
+[expect]
+# The probe characterizes — it does NOT assert task success.
+# Admit the full envelope: the model may complete the write (no
+# length fire), may write a partial file before length fire, may
+# go into prose mode (no tool_call at all), etc.
+#
+# stop_reason intentionally omitted — both FinalAnswer and Length
+# are valid probe outcomes that yield interpretable data.
+
+min_tool_calls = 0
+max_tool_calls = 3
+# write_file is the only mutating tool we'd expect; admit it.
+# read_file is allowed in case the model surveys before writing.
+# Everything else stays forbidden as a canary against unrelated
+# behavior bleeding into the probe.
+must_not_call = ["list_dir", "list_files_recursive", "grep",
+                 "edit_file", "bash"]
+
+# Provenance contract — no synthetic recovery on this guard branch
+# today. If a future Tier 2.3 decision adds length-recovery, the
+# probe's predicates will need updating.
+must_not_have_synthetic_calls = ["read_file", "write_file", "edit_file"]
+
+# Guard contract — the probe is interesting if length fires OR if
+# the model completes without firing. Don't assert which; admit both
+# via min/max bounds.
+must_not_fire_guards = ["cold_read", "dedup", "write_pressure", "turn_cap",
+                        "read_before_write"]
+min_guard_fires = 0
+max_guard_fires = 2
+
+# No tool_errors expected in any observed shape (write_file either
+# succeeds or doesn't dispatch).
+min_tool_errors = 0
+max_tool_errors = 2
+
+# Envelope caps generous — probe data is interesting regardless of
+# exact tokens / wall.
+max_total_tokens = 8000
+max_wall_ms = 120000
