@@ -124,7 +124,22 @@ max_total_tokens = 7000
 #   length-trunc:  60-70s (model burns through max_tokens=2048 generating
 #                  bash code blocks at slow throughput on older Metal rigs)
 #   no-call-FA:    5-10s
-# 75000ms cap admits all four shapes with margin. CI runner noise may
-# require structural intervention (lower max_tokens per turn) if this
-# cap proves brittle in practice — see lessons.md watchout 5.
+# 75000ms cap admits all four shapes with margin.
+#
+# DISCIPLINE: if this cap fails in CI (or on any future rig) due to
+# the length-truncated shape exceeding 75s, the correct response is
+# STRUCTURAL, not a cap bump. The length-truncated shape is the
+# pathological case where the model burns max_tokens on prose-bash
+# blocks; the structural fix is to reduce the per-turn max_tokens
+# budget for this fixture (e.g., a future fixture-level
+# `max_tokens_override = 1024` field) so the length cap is hit
+# earlier and the wall time bounded. A cap bump would let the
+# pathology grow unbounded.
+#
+# Recorded as discipline now (rather than encoded as a hook) because
+# the trigger condition hasn't been observed in practice — the cap
+# has been comfortable on the local dev rig and on CI (CI doesn't run
+# bench-run, only bench-replay; the cap is exercised only when
+# regenerating baselines). When/if the trigger does fire, this
+# comment is the pre-committed direction to the next maintainer.
 max_wall_ms = 75000
