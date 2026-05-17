@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::bench::fixture::Fixture;
 use crate::bench::trace::TraceEvent;
-use crate::obs::Event;
+use crate::obs::{Event, ToolOrigin};
 
 /// One task's outcome — what we'd render in a markdown table row.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,6 +43,17 @@ pub struct Summary {
     /// the trace alone.
     #[serde(default)]
     pub final_answer: Option<String>,
+    /// Count of `tool_result` events whose `origin` is
+    /// `SyntheticGuardRecovery` (schema v3 — harness-injected, not
+    /// model-emitted). Subset of `tool_calls`. `#[serde(default)]` so
+    /// pre-v3 baselines deserialize cleanly with `0`.
+    #[serde(default)]
+    pub synthetic_tool_calls: u32,
+    /// Per-tool-name breakdown of synthetic tool calls. Mirrors
+    /// `tool_calls_by_name` but restricted to harness-injected origins.
+    /// `#[serde(default)]` so pre-v3 baselines deserialize cleanly.
+    #[serde(default)]
+    pub synthetic_tool_calls_by_name: BTreeMap<String, u32>,
 }
 
 /// Compute a Summary from a list of trace events. Pure.
@@ -78,7 +89,11 @@ pub fn summarize_trace(events: &[TraceEvent]) -> Summary {
             }
             Event::ToolCall { .. } => {}
             Event::ToolResult {
-                name, ok, cached, ..
+                name,
+                ok,
+                cached,
+                origin,
+                ..
             } => {
                 s.tool_calls += 1;
                 *s.tool_calls_by_name.entry(name.clone()).or_insert(0) += 1;
@@ -87,6 +102,18 @@ pub fn summarize_trace(events: &[TraceEvent]) -> Summary {
                 }
                 if !*ok {
                     s.tool_errors += 1;
+                }
+                // Schema v3: count synthetic-origin calls separately. The
+                // `tool_calls` / `tool_calls_by_name` totals continue to
+                // include synthetic calls — the new counters provide an
+                // orthogonal slice for provenance-aware predicates without
+                // changing existing fixture semantics. Missing `origin` on
+                // pre-v3 traces is treated as model-originated.
+                if matches!(origin, Some(ToolOrigin::SyntheticGuardRecovery { .. })) {
+                    s.synthetic_tool_calls += 1;
+                    *s.synthetic_tool_calls_by_name
+                        .entry(name.clone())
+                        .or_insert(0) += 1;
                 }
             }
             Event::Guard { kind, .. } => {
@@ -224,6 +251,35 @@ pub fn check_expectations(fx: &Fixture, s: &Summary) -> Vec<String> {
         && s.guard_fires > max
     {
         fails.push(format!("guard_fires={} > max={max}", s.guard_fires));
+    }
+    // Synthetic-call predicates (schema v3). Provenance-aware variants of
+    // the must_call_all_of / must_not_call pair. A pre-v3 trace has no
+    // synthetic calls, so `must_have_synthetic_calls` is fail-closed
+    // against archived baselines — by design, since the contract is
+    // about a v3-emitting runtime.
+    let synthetic_kinds: BTreeSet<&str> = s
+        .synthetic_tool_calls_by_name
+        .keys()
+        .map(|k| k.as_str())
+        .collect();
+    for required in &fx.expect.must_have_synthetic_calls {
+        if !s.synthetic_tool_calls_by_name.contains_key(required) {
+            let seen: Vec<&str> = synthetic_kinds.iter().copied().collect();
+            fails.push(format!(
+                "must_have_synthetic_calls: missing {} (saw: {})",
+                required,
+                if seen.is_empty() {
+                    "<none>".to_string()
+                } else {
+                    seen.join(",")
+                }
+            ));
+        }
+    }
+    for forbidden in &fx.expect.must_not_have_synthetic_calls {
+        if s.synthetic_tool_calls_by_name.contains_key(forbidden) {
+            fails.push(format!("forbidden synthetic call: {forbidden}"));
+        }
     }
     if let Some(max) = fx.expect.max_wall_ms
         && s.wall_ms > max
@@ -621,5 +677,227 @@ mod tests {
             ..Default::default()
         };
         assert!(check_expectations(&fx, &s).is_empty());
+    }
+
+    // ---- Schema v3 synthetic-call predicates ------------------------------
+
+    /// Build a `Summary` carrying one synthetic-origin call of `name` plus
+    /// the corresponding `tool_calls_by_name` count, mirroring what
+    /// `summarize_trace` would produce. Useful for testing predicates
+    /// without round-tripping a full trace.
+    fn summary_with_synthetic(name: &str) -> Summary {
+        let mut by_name = BTreeMap::new();
+        by_name.insert(name.to_string(), 1);
+        Summary {
+            tool_calls: 1,
+            tool_calls_by_name: by_name.clone(),
+            synthetic_tool_calls: 1,
+            synthetic_tool_calls_by_name: by_name,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn summarize_trace_counts_synthetic_origin() {
+        // Two ToolResult events: one model-originated, one synthetic. The
+        // total tool_calls count includes both; the synthetic counters
+        // capture only the second.
+        let evs = vec![
+            te(Event::ToolResult {
+                turn: 0,
+                name: "edit_file".into(),
+                tool_call_id: "model-1".into(),
+                ok: false,
+                wall_ms: 1,
+                bytes_out: 0,
+                cached: false,
+                error: Some("refused".into()),
+                origin: None,
+            }),
+            te(Event::ToolResult {
+                turn: 0,
+                name: "read_file".into(),
+                tool_call_id: "synthetic-rbw-model-1".into(),
+                ok: true,
+                wall_ms: 2,
+                bytes_out: 182,
+                cached: false,
+                error: None,
+                origin: Some(ToolOrigin::SyntheticGuardRecovery {
+                    guard: "read_before_write".into(),
+                }),
+            }),
+        ];
+        let s = summarize_trace(&evs);
+        assert_eq!(s.tool_calls, 2, "total counts both calls");
+        assert_eq!(s.synthetic_tool_calls, 1, "only the synthetic call");
+        assert_eq!(s.synthetic_tool_calls_by_name.get("read_file"), Some(&1));
+        assert!(
+            !s.synthetic_tool_calls_by_name.contains_key("edit_file"),
+            "model-originated calls must not appear in synthetic counts"
+        );
+    }
+
+    #[test]
+    fn must_have_synthetic_calls_passes_when_present() {
+        let fx_src = r#"
+            id = "t"
+            prompt = "p"
+            [expect]
+            must_have_synthetic_calls = ["read_file"]
+        "#;
+        let fx = Fixture::from_toml_str(fx_src).unwrap();
+        let s = summary_with_synthetic("read_file");
+        assert!(check_expectations(&fx, &s).is_empty());
+    }
+
+    #[test]
+    fn must_have_synthetic_calls_fails_when_only_model_call_present() {
+        // The same tool name appearing as a model-originated call doesn't
+        // satisfy `must_have_synthetic_calls` — provenance matters.
+        let fx_src = r#"
+            id = "t"
+            prompt = "p"
+            [expect]
+            must_have_synthetic_calls = ["read_file"]
+        "#;
+        let fx = Fixture::from_toml_str(fx_src).unwrap();
+        let mut by_name = BTreeMap::new();
+        by_name.insert("read_file".into(), 1);
+        let s = Summary {
+            tool_calls: 1,
+            tool_calls_by_name: by_name,
+            // No synthetic counts populated.
+            ..Default::default()
+        };
+        let fails = check_expectations(&fx, &s);
+        assert_eq!(fails.len(), 1);
+        assert!(
+            fails[0].contains("missing read_file"),
+            "diagnostic should name the missing tool: {}",
+            fails[0]
+        );
+        assert!(
+            fails[0].contains("<none>"),
+            "diagnostic should mark empty synthetic-call set: {}",
+            fails[0]
+        );
+    }
+
+    #[test]
+    fn must_have_synthetic_calls_diagnostic_lists_seen_kinds_sorted() {
+        let fx_src = r#"
+            id = "t"
+            prompt = "p"
+            [expect]
+            must_have_synthetic_calls = ["edit_file"]
+        "#;
+        let fx = Fixture::from_toml_str(fx_src).unwrap();
+        let mut synth_by_name = BTreeMap::new();
+        synth_by_name.insert("read_file".into(), 1);
+        synth_by_name.insert("grep".into(), 1);
+        let s = Summary {
+            synthetic_tool_calls: 2,
+            synthetic_tool_calls_by_name: synth_by_name,
+            ..Default::default()
+        };
+        let fails = check_expectations(&fx, &s);
+        assert_eq!(fails.len(), 1);
+        // Sorted by BTreeMap iteration order.
+        assert!(
+            fails[0].contains("grep,read_file"),
+            "diagnostic should list seen kinds sorted: {}",
+            fails[0]
+        );
+    }
+
+    #[test]
+    fn must_not_have_synthetic_calls_fails_when_present() {
+        let fx_src = r#"
+            id = "t"
+            prompt = "p"
+            [expect]
+            must_not_have_synthetic_calls = ["edit_file"]
+        "#;
+        let fx = Fixture::from_toml_str(fx_src).unwrap();
+        let s = summary_with_synthetic("edit_file");
+        let fails = check_expectations(&fx, &s);
+        assert!(
+            fails
+                .iter()
+                .any(|f| f.contains("forbidden synthetic call: edit_file")),
+            "{fails:?}"
+        );
+    }
+
+    #[test]
+    fn must_not_have_synthetic_calls_passes_when_only_model_call_present() {
+        // Symmetric with the model/synthetic split: a model-originated
+        // edit_file does not violate `must_not_have_synthetic_calls`.
+        let fx_src = r#"
+            id = "t"
+            prompt = "p"
+            [expect]
+            must_not_have_synthetic_calls = ["edit_file"]
+        "#;
+        let fx = Fixture::from_toml_str(fx_src).unwrap();
+        let mut by_name = BTreeMap::new();
+        by_name.insert("edit_file".into(), 1);
+        let s = Summary {
+            tool_calls: 1,
+            tool_calls_by_name: by_name,
+            ..Default::default()
+        };
+        assert!(check_expectations(&fx, &s).is_empty());
+    }
+
+    #[test]
+    fn synthetic_predicates_default_empty_when_absent() {
+        // Fixtures that omit the new predicates parse cleanly and accept
+        // any synthetic-call pattern — the backward-compat contract.
+        let fx_src = r#"
+            id = "t"
+            prompt = "p"
+            [expect]
+        "#;
+        let fx = Fixture::from_toml_str(fx_src).unwrap();
+        assert!(fx.expect.must_have_synthetic_calls.is_empty());
+        assert!(fx.expect.must_not_have_synthetic_calls.is_empty());
+        let s = summary_with_synthetic("read_file");
+        assert!(check_expectations(&fx, &s).is_empty());
+    }
+
+    #[test]
+    fn pre_v3_trace_fails_must_have_synthetic_calls_closed() {
+        // The fail-closed contract documented in obs/schema.md (v3): a
+        // fixture asserting `must_have_synthetic_calls` against a trace
+        // emitted by a pre-v3 runtime sees an empty synthetic-call set
+        // and fails. Exercising the auto-read predicate requires a
+        // v3-emitting runtime — by design.
+        let fx_src = r#"
+            id = "t"
+            prompt = "p"
+            [expect]
+            must_have_synthetic_calls = ["read_file"]
+        "#;
+        let fx = Fixture::from_toml_str(fx_src).unwrap();
+        // Pre-v3 trace: ToolResult with origin = None.
+        let evs = vec![te(Event::ToolResult {
+            turn: 0,
+            name: "read_file".into(),
+            tool_call_id: "x".into(),
+            ok: true,
+            wall_ms: 1,
+            bytes_out: 42,
+            cached: false,
+            error: None,
+            origin: None,
+        })];
+        let s = summarize_trace(&evs);
+        let fails = check_expectations(&fx, &s);
+        assert!(
+            !fails.is_empty(),
+            "v3 predicate must fail-closed against pre-v3 trace"
+        );
     }
 }

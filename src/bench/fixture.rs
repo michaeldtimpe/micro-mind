@@ -102,6 +102,22 @@ pub struct TaskExpect {
     /// dedup-safety-net branch but rejects runaway loops.
     #[serde(default)]
     pub max_guard_fires: Option<u32>,
+    /// Pass only if every tool name in this list appeared as at least one
+    /// *synthetic* (harness-injected) call. Used to lock the auto-read
+    /// contract on `read_before_write` recovery — e.g.
+    /// `must_have_synthetic_calls = ["read_file"]` for a fixture that
+    /// exercises the option-(b) auto-read path. Sourced from
+    /// `synthetic_tool_calls_by_name` (schema v3); pre-v3 traces report no
+    /// synthetic calls so this predicate is fail-closed against them.
+    #[serde(default)]
+    pub must_have_synthetic_calls: Vec<String>,
+    /// Fail if any of these tool names appeared as a synthetic call.
+    /// Symmetric counterpart to `must_have_synthetic_calls`. Use
+    /// defensively — e.g. `must_not_have_synthetic_calls = ["edit_file"]`
+    /// to ensure no future harness change accidentally synthesizes a
+    /// mutating tool call.
+    #[serde(default)]
+    pub must_not_have_synthetic_calls: Vec<String>,
     /// Hard upper bound on `stop.wall_ms` from the JSONL trace.
     #[serde(default)]
     pub max_wall_ms: Option<u64>,
@@ -239,6 +255,8 @@ mod tests {
             must_not_fire_guards = ["read_before_write"]
             min_guard_fires = 1
             max_guard_fires = 2
+            must_have_synthetic_calls = ["read_file"]
+            must_not_have_synthetic_calls = ["edit_file"]
             max_wall_ms = 1000
             max_total_tokens = 2000
         "#;
@@ -252,6 +270,20 @@ mod tests {
         assert_eq!(fx.expect.must_not_fire_guards, vec!["read_before_write"]);
         assert_eq!(fx.expect.min_guard_fires, Some(1));
         assert_eq!(fx.expect.max_guard_fires, Some(2));
+        assert_eq!(fx.expect.must_have_synthetic_calls, vec!["read_file"]);
+        assert_eq!(fx.expect.must_not_have_synthetic_calls, vec!["edit_file"]);
+    }
+
+    #[test]
+    fn synthetic_call_predicates_default_when_absent() {
+        let src = r#"
+            id = "x"
+            prompt = "p"
+            [expect]
+        "#;
+        let fx = Fixture::from_toml_str(src).unwrap();
+        assert!(fx.expect.must_have_synthetic_calls.is_empty());
+        assert!(fx.expect.must_not_have_synthetic_calls.is_empty());
     }
 
     #[test]
