@@ -181,11 +181,54 @@ sources opt in by adding their variant here.
   visibility: the refusal that motivated the auto-read is still present
   in the trace, not silently rewritten.
 
+### Schema-migration compatibility surface
+
+A separate, narrower contract than the predicate-replay invariants above.
+Pinned by the `bench-replay --migration-check <dir>` CI step (gating):
+any committed v1/v2/v3 trace must (a) parse without errors and (b)
+produce a `Summary` whose pinned fields are present, well-typed, and
+internally consistent.
+
+**Pinned** (CI fails if these break):
+
+| Field | Why |
+|---|---|
+| Trace parses to `Vec<TraceEvent>` | Deserialization-compat baseline |
+| `Summary.tool_calls` | Predicate-input contract |
+| `Summary.tool_errors` | Predicate-input contract |
+| `Summary.tool_calls_by_name` | Per-tool predicate inputs |
+| `Summary.guards_by_kind` + `Summary.guard_fires` | Guard predicate inputs |
+| `Summary.synthetic_tool_calls` + `Summary.synthetic_tool_calls_by_name` | Provenance predicate inputs (schema v3) |
+| `Summary.model_tool_calls` (derived) | Compositionality predicate input (schema v3) |
+| Accounting identity: `model_tool_calls + synthetic_tool_calls == tool_calls` | Catches `summarize_trace` regressions that forget to derive `model_tool_calls` consistently |
+
+**Not pinned** (drift allowed across schema versions):
+
+| Field | Why not |
+|---|---|
+| `Summary.total_tokens`, `Summary.prompt_tokens`, `Summary.completion_tokens` | Drift expected across server-state / model rev |
+| `Summary.wall_ms` | Drift expected across rig + cache state |
+| `Summary.final_answer` | Best-effort across v1 (absent) / v2 / v3 — explicitly tolerated as `None` for pre-v2 traces |
+| `Summary.stop_reason` | Stop reason set changes over time (e.g., `Length` added in v2-era harness change) |
+
+Adding a field to "not pinned" is a schema-erosion risk. If a future
+predicate ever depends on one of those fields, promote it to "pinned"
+in the same commit and capture the rationale here.
+
+The migration check is hermetic — no fixture matching, no predicate
+evaluation against expectations, no model. It exclusively tests the
+deserialization layer. The advisory archive replay (`Replay archive
+baselines` in CI) is the separate semantic-replay test and is allowed
+to fail because fixture predicates have moved; the migration check is
+not.
+
 ## Stability guarantees
 
 - New optional fields may be added without bumping the schema version.
 - New `event` variants may be added; consumers must tolerate unknown variants.
 - Existing field names and types will not change without a `schema_v` bump.
+- Any change to the pinned fields above requires either a `schema_v` bump
+  or a corresponding update to the migration check's accounting invariants.
 
 ## Quick recipes
 
