@@ -338,4 +338,42 @@ The meta-principle: **guard semantics live in two places — the predicate code 
 
 **Affected files**: `bench/tasks/12-edit-file-read-or-write.toml` (new fixture), `bench/baselines/main/12-edit-file-read-or-write-rep[0-2].jsonl` (canonical baseline at 36/36 with all 12 fixtures), `bench/baselines/main/summary.json` (3 outcomes appended, `n_outcomes` 33→36).
 
+> **Update 2026-05-17 (same day):** This entry's 0/3 recovery claim is **superseded** by the next entry. Wiring `coach::guard_failure_memory_note` into the `read_before_write` guard branch lifted recovery from 0/3 to 1/2-of-the-way: the model now performs the first recovery hop (`read_file`) but stops before the second hop (`edit_file`). The structural diagnosis above stands — the guard path was missing the "do not repeat" nudge — but the *consequence* changed once the nudge landed.
+
+---
+
+### [2026-05-17] Failure-memory wiring closes the first recovery hop; the second hop is multi-turn-chain territory the 1.5 B model can't sustain
+
+**What happened**: Acted on the prior entry's "obvious next move" by wiring `coach::guard_failure_memory_note(tool, kind) -> Option<String>` into the `read_before_write` guard branch in `src/agent/mod.rs`. Function returns `Some` only for guard kinds where retry-with-different-shape is the productive outcome (today: just `read_before_write`); `cold_read`, `dedup`, `write_pressure`, `length`, `turn_cap` all return `None` so the new wiring is a no-op for them. Re-ran `12-edit-file-read-or-write` to verify. Result across 3 reps at temp=0, bit-exact at 3881 total_tokens (was 2411 pre-wiring, +1470 from the recovery context):
+
+- **turn 0**: model emits `edit_file` → `read_before_write` guard refuses → refusal note pushed (already had the recovery instruction) + failure-memory note pushed (the new piece)
+- **turn 1**: model emits `read_file` and gets the content — **first-hop recovery fires**, contradicting the 2026-05-17 "0/3 recovery" claim
+- **turn 2**: model produces a `FinalAnswer` asking the user *"Please provide me with the new content for this line."* — the user's original prompt already specified the replacement (`'bar'`), but the model treats the read result as the end of the task and delegates the actual edit back
+
+`tool_calls: 1` (`read_file`), `stop_reason: FinalAnswer`, `guards_by_kind: {"read_before_write": 1}`. Partial recovery, not full. Predicate flip on `12-edit-file-read-or-write` from `max_tool_calls=0` to `min/max_tool_calls=1, must_call_any_of=["read_file"]` captures the new shape.
+
+**Root cause (of the second-hop gap)**: Composing a *different* tool call (`edit_file`) after consuming a tool *result* (`read_file`'s output) is multi-turn-chain territory. `neo-llm-bench` measured 0% BFCL multi-turn at this model size (Q8_0, temp=0). The 1.5 B model can do one tool hop with a deterministic reasoning chain — what it can't sustain is a chain that *follows up on a tool result* and emits a *different tool's composition*. The placeholder recovery (11) worked end-to-end because the second hop was the *same tool with a different body*, which is single-hop territory the chain can hold. Edit-after-read requires the chain to span a tool boundary and a result digest, and that's the floor.
+
+The model's final answer ("provide me the new content for this line") is the same instruction-tuned "delegate tool work to the user" pattern as the original entry's failure mode, just one step further into the recovery chain. The 1.5 B model's "echo and stop" instinct fires whenever the chain runs out of confident next-step reasoning, regardless of how deep into recovery we are.
+
+**Fix / takeaway**: Two takeaways, neither acted on in this commit:
+
+1. **First-hop recovery is achievable through harness-side nudges.** Mirroring the dispatch path's `failure_memory_note` injection at the guard `continue` path is a small change (~10 lines + a hint function with a single `Some`) that converts a 0% recovery rate into a 100% first-hop rate on this fixture. The principle generalizes: **every place the agent loop short-circuits without going through `dispatch`, audit whether the missing affordances (`coach::coach`, `failure_memory_note`) are load-bearing.** Today, only `read_before_write` benefited; future guard kinds that target an actionable refusal pattern (rather than a terminal exit or a "just stop" steer) opt in by adding their hint to `guard_failure_memory_note`.
+
+2. **Second-hop closure is feature work, not harness scaffolding.** Two architectural options for a future cycle:
+   - *(a) Post-recovery-read system note.* After a recovery-read succeeds (i.e., a `read_file` that was preceded by a `read_before_write` fire), push a system note: "You have read the file. Now perform the original edit." Mechanically cheap; risks expanding the system-note budget at 8192 ctx; needs tracking "this read was a recovery read" through one extra piece of state in the agent loop.
+   - *(b) Auto-read on guard refusal.* Replace "refuse and coach the model to read" with "refuse, *automatically* read the file ourselves, and replay the original edit_file call with the read content in context." Converts the two-hop chain into a one-hop chain at the harness layer entirely. Bigger change; aligns with the project's "make the harness smarter than the model" thesis; might require care that the auto-read doesn't itself trip other guards (e.g. cold_read if the path basename isn't in user input — but it would be, because the model just named it in the edit_file args).
+
+   *(b)* feels more aligned with the project posture. Parked for now: fixture 12 captures the partial-recovery shape, so when *(b)* lands, the predicate flip from `tool_calls=1` to `tool_calls=0` (auto-read absorbs the read into the harness, model only sees one successful edit_file) is the next intended signal.
+
+3. **The `0% multi-turn floor` from `neo-llm-bench` is load-bearing as a *design* constraint, not just a *measurement*.** Every harness feature that requires the model to bridge a tool-result-to-different-tool boundary is going to fight this floor. The thesis "make the harness smarter than the model" reads, in this light, as "the harness should absorb multi-turn chains so the model only ever has to do single-hop work." Auto-read on guard refusal is one application of that thesis; future guards should be designed similarly.
+
+**Predicate-design note**: Fixture 12 demonstrated the orthogonality of the new guard-fire predicate set in practice. Predicate flip across versions:
+- Pre-wiring (anchor): `max_tool_calls=0`, `must_fire_guards=["read_before_write"]`, `max_guard_fires=1`
+- Post-wiring (this entry): `min/max_tool_calls=1`, `must_call_any_of=["read_file"]`, `must_fire_guards=["read_before_write"]`, `max_guard_fires=1`
+
+The `must_fire_guards` and `max_guard_fires` predicates are *invariant* across both versions — same kind, same count, every rep. What flipped is the recovery-hop-count predicates, which is the right axis: kind predicates pin the harness behavior (which guard fires), count predicates pin the model behavior (how far the chain reaches). The 2026-05-17 commit landing the predicates and yesterday's commit using them in anger together vindicate the design split.
+
+**Affected files**: `src/agent/coach.rs` (`guard_failure_memory_note` function + 5 unit tests), `src/agent/mod.rs` (wiring at the read_before_write and cold_read guard `continue` branches; cold_read inherits the wiring as a no-op so new kinds opt in through the coach function), `bench/tasks/12-edit-file-read-or-write.toml` (predicate flip), `bench/baselines/main/12-edit-file-read-or-write-rep[0-2].jsonl` (new traces; old traces from the anchor version replaced), `bench/baselines/main/summary.json` (fixture-12 outcomes replaced, `n_outcomes` stays at 36).
+
 ---

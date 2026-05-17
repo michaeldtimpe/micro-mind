@@ -1,45 +1,54 @@
 # Bench fixture format — see bench/README.md for the schema reference.
 #
-# Second positive guard-fire fixture in the suite (after 11). Probes
-# whether qwen25-1.5b-instruct reads `notes.txt` before editing when the
-# prompt is naturally underspecified (neither requiring nor forbidding a
-# read). Observed across 3 reps (2026-05-17) at temp=0:
+# Second positive guard-fire fixture in the suite (after 11). Baits
+# `read_before_write` on `edit_file` with a naturally underspecified
+# prompt and captures the post-Commit-E partial-recovery shape.
 #
-#   - All 3 reps: model emits `edit_file` on turn 0 without reading
-#   - `read_before_write` guard fires, refusal note pushed as tool_result
-#   - Model apologizes and stops; tool_calls=0, stop_reason=FinalAnswer
-#   - Bit-exact at 2411 total_tokens (wall ms varies ±5)
+# Two findings layered into this fixture:
 #
-# This is a *negative recovery* finding — contrast with `11-write-file-
-# placeholder`, where the same model on a structurally similar failure
-# shape recovers 9/10 reps. The asymmetry traces to the agent loop: the
-# placeholder rejection flows through `dispatch` and triggers BOTH
-# `coach::coach` (recovery hint) AND `coach::failure_memory_note`
-# ("do not repeat") at `src/agent/mod.rs:306,334`. The read_before_write
-# guard fires earlier (`src/agent/mod.rs:256`) with a `continue` that
-# skips both coach paths. The refusal note is the model's ONLY signal
-# and, on this failure shape, the 1.5B model treats it as a stop signal
-# rather than a retry prompt. See `lessons.md` 2026-05-17.
+# 1) The 2026-05-17 "0/3 recovery" finding (initial commit of this
+#    fixture, before the failure-memory wiring) was superseded the same
+#    day by wiring `coach::guard_failure_memory_note` into the
+#    read_before_write guard branch. The "do not repeat" system nudge
+#    that drives placeholder-rejection recovery (11-write-file-
+#    placeholder) was missing from the guard `continue` path; adding it
+#    closes that structural gap.
 #
-# Notable side-finding: the model's final answer instructs THE USER to
-# run `read_file` (and even dictates a bash command with the wrong shape:
-# `bash "cat ..." --timeout_s 30`). It's roleplaying as if it's giving a
-# human teammate instructions, rather than emitting structured
-# tool_calls itself. Markers of the "echo and stop" instruction-tuned
-# behavior under failure.
+# 2) Recovery now fires for the FIRST hop only. Across 3 reps at
+#    temp=0, bit-exact at 3881 total_tokens:
+#      turn 0: model emits edit_file → guard refuses + failure-memory
+#      turn 1: model emits read_file (the first recovery hop) → ok
+#      turn 2: model produces FinalAnswer asking the user to provide
+#              "the new content for this line" instead of issuing
+#              edit_file
+#    The user's original prompt already specified the replacement
+#    ("Change 'foo' to 'bar'"), so the second-hop ask is the same
+#    "delegate-tool-work-to-the-user" pattern documented in the prior
+#    entry — just one level deeper in the chain.
+#
+# Root cause of the second-hop gap: composing a DIFFERENT tool call
+# (edit_file) after consuming a tool RESULT (read_file's output) is
+# multi-turn-chain territory. neo-llm-bench measured 0% on BFCL
+# multi-turn at this model size. The 1.5 B model can do one tool hop
+# with a deterministic reasoning chain; what it can't sustain is the
+# chain that follows up on a tool result and emits a different tool's
+# composition. See `lessons.md` 2026-05-17 (second entry).
 #
 # Fixture purpose:
-#   1. Lock the read_before_write guard kind as positively asserted.
-#   2. Anchor the non-recovery shape so any future harness improvement
-#      that DOES drive recovery (e.g. coach hint wired into the guard
-#      path) flips this fixture RED — that's the signal we want.
+#   1. Lock the partial-recovery shape (1 tool_call, read_file,
+#      guard fires once) as the regression anchor.
+#   2. Any future improvement that closes the second hop — e.g. a
+#      system note after a recovery-read saying "you have read the
+#      file; now perform the original edit" — flips
+#      `min_tool_calls=1, max_tool_calls=1` → 2 and that's the
+#      intended signal.
 
 id = "12-edit-file-read-or-write"
-description = "Bait `read_before_write` for `edit_file` on a naturally underspecified prompt. Model edits blindly, guard refuses, model apologizes-and-stops without recovering. Locks the non-recovery shape as the regression anchor."
+description = "Bait `read_before_write` for `edit_file`. With failure-memory wiring (Commit E), model performs first-hop recovery (read_file) but stops before the second hop (edit_file), delegating the edit back to the user. Locks the partial-recovery shape."
 prompt = "Change 'foo' to 'bar' in notes.txt."
 cwd_isolated = true
 
-# Single "foo" occurrence so a hypothetical future-recovery branch
+# Single "foo" occurrence so a hypothetical future full-recovery branch
 # wouldn't fail spuriously on edit_file's unique-match enforcement.
 [[seed_files]]
 path = "notes.txt"
@@ -48,18 +57,20 @@ content = "line one with foo in it\nline two without it\n"
 [expect]
 stop_reason = "FinalAnswer"
 
-# Zero dispatches. Model emits one tool_call (visible as
-# `native_tool_calls=1` in the trace) but the guard refuses it before
-# dispatch, and the model does NOT retry. A future tool_call here would
-# mean recovery is now happening — flip the predicate when that lands.
-min_tool_calls = 0
-max_tool_calls = 0
-must_not_call = ["read_file", "list_dir", "list_files_recursive",
-                 "grep", "write_file", "edit_file", "bash"]
+# Exactly one dispatched call: read_file, the first recovery hop. The
+# initial edit_file emission is refused by the guard before dispatch
+# and doesn't count toward tool_calls (visible as
+# `native_tool_calls=1` on turn 0, but no ToolResult event). A future
+# tool_call beyond this — particularly edit_file completing the
+# chain — would flip the predicate and that's the desired signal.
+min_tool_calls = 1
+max_tool_calls = 1
+must_call_any_of = ["read_file"]
+must_not_call = ["list_dir", "list_files_recursive", "grep",
+                 "write_file", "edit_file", "bash"]
 
-# Positive guard fire — the load-bearing assertion. Exactly one fire,
-# kind=read_before_write. The other guards must stay silent (canary set
-# matching 09/10's defensive forbids).
+# Positive guard fire — load-bearing assertion. Exactly one fire,
+# kind=read_before_write. The other guards stay silent (canary set).
 must_fire_guards = ["read_before_write"]
 must_not_fire_guards = ["cold_read", "dedup", "length", "write_pressure",
                         "turn_cap"]
@@ -67,15 +78,15 @@ min_guard_fires = 1
 max_guard_fires = 1
 
 # Guard refusals push a note as a tool_result with ok=true (not an
-# error). No `tool_errors` should accumulate.
+# error). The recovery read_file also succeeds. No tool_errors.
 min_tool_errors = 0
 max_tool_errors = 0
 
-# Observed wall_ms across 3 reps: 6312, 6313, 6414. 12000 gives ~5500ms
-# headroom — wider than other fixtures because this is a 2-turn flow
-# with full-context recall on the second turn.
-max_wall_ms = 12000
-# Architectural floor at temp=0, measured 2026-05-17 across 3 reps:
-# 2411 total tokens deterministic. 2700 gives ~290 tokens of headroom,
-# matching the 03/04 convention (~300 tokens above floor).
-max_total_tokens = 2700
+# Observed wall_ms across 3 reps: 7516, 7614, 7758. 14000 gives ~6.2s
+# headroom — wider because this is now a 3-turn flow with a recovery
+# read on the second turn.
+max_wall_ms = 14000
+# Architectural floor at temp=0, measured 2026-05-17 across 3 reps
+# post-Commit-E: 3881 total tokens deterministic. 4200 gives ~320
+# tokens of headroom, matching the 03/04/12-pre-recovery convention.
+max_total_tokens = 4200

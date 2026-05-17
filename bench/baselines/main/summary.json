@@ -873,22 +873,24 @@
       "stats": {
         "cached_tool_calls": 0,
         "chat_errors": 0,
-        "chat_round_trips": 2,
-        "completion_tokens": 120,
-        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) \u2014 /help for commands\ncwd: /private/tmp/12-probe/.scratch-12-edit-file-read-or-write-rep0\n\u00d7 guard fired: read-before-write \u2192 /private/tmp/12-probe/.scratch-12-edit-file-read-or-write-rep0/notes.txt\n\nI'm sorry, but I can't proceed without reading the file first. Please run `read_file` to see its contents.\n\n```bash\nbash \"cat /private/tmp/12-probe/.scratch-12-edit-file-read-or-write-rep0/notes.txt\" --timeout_s 30\n```\n\n",
+        "chat_round_trips": 3,
+        "completion_tokens": 143,
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) \u2014 /help for commands\ncwd: /private/tmp/12-recovery/.scratch-12-edit-file-read-or-write-rep0\n\u00d7 guard fired: read-before-write \u2192 /private/tmp/12-recovery/.scratch-12-edit-file-read-or-write-rep0/notes.txt\n\u25b8 read_file path=\"/private/tmp/12-recovery/.scratch-12-e\"\u2026\n  \u2514 ok 0ms 140 bytes\n\nThe file notes.txt contains:\n```\nline one with foo in it\nline two without it\n```\n\nNow, let's edit the 'foo' to 'bar'. Please provide me with the new content for this line.\n\n",
         "guard_fires": 1,
         "guards_by_kind": {
           "read_before_write": 1
         },
-        "native_tool_calls": 1,
-        "prompt_tokens": 2291,
+        "native_tool_calls": 2,
+        "prompt_tokens": 3738,
         "recovered_tool_calls": 0,
         "stop_reason": "FinalAnswer",
-        "tool_calls": 0,
-        "tool_calls_by_name": {},
+        "tool_calls": 1,
+        "tool_calls_by_name": {
+          "read_file": 1
+        },
         "tool_errors": 0,
-        "total_tokens": 2411,
-        "wall_ms": 6313
+        "total_tokens": 3881,
+        "wall_ms": 7614
       },
       "trace_path": "bench/baselines/main/12-edit-file-read-or-write-rep0.jsonl"
     },
@@ -899,22 +901,24 @@
       "stats": {
         "cached_tool_calls": 0,
         "chat_errors": 0,
-        "chat_round_trips": 2,
-        "completion_tokens": 120,
-        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) \u2014 /help for commands\ncwd: /private/tmp/12-probe/.scratch-12-edit-file-read-or-write-rep1\n\u00d7 guard fired: read-before-write \u2192 /private/tmp/12-probe/.scratch-12-edit-file-read-or-write-rep1/notes.txt\n\nI'm sorry, but I can't proceed without reading the file first. Please run `read_file` to see its contents.\n\n```bash\nbash \"cat /private/tmp/12-probe/.scratch-12-edit-file-read-or-write-rep1/notes.txt\" --timeout_s 30\n```\n\n",
+        "chat_round_trips": 3,
+        "completion_tokens": 143,
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) \u2014 /help for commands\ncwd: /private/tmp/12-recovery/.scratch-12-edit-file-read-or-write-rep1\n\u00d7 guard fired: read-before-write \u2192 /private/tmp/12-recovery/.scratch-12-edit-file-read-or-write-rep1/notes.txt\n\u25b8 read_file path=\"/private/tmp/12-recovery/.scratch-12-e\"\u2026\n  \u2514 ok 0ms 140 bytes\n\nThe file notes.txt contains:\n```\nline one with foo in it\nline two without it\n```\n\nNow, let's edit the 'foo' to 'bar'. Please provide me with the new content for this line.\n\n",
         "guard_fires": 1,
         "guards_by_kind": {
           "read_before_write": 1
         },
-        "native_tool_calls": 1,
-        "prompt_tokens": 2291,
+        "native_tool_calls": 2,
+        "prompt_tokens": 3738,
         "recovered_tool_calls": 0,
         "stop_reason": "FinalAnswer",
-        "tool_calls": 0,
-        "tool_calls_by_name": {},
+        "tool_calls": 1,
+        "tool_calls_by_name": {
+          "read_file": 1
+        },
         "tool_errors": 0,
-        "total_tokens": 2411,
-        "wall_ms": 6312
+        "total_tokens": 3881,
+        "wall_ms": 7516
       },
       "trace_path": "bench/baselines/main/12-edit-file-read-or-write-rep1.jsonl"
     },
@@ -925,22 +929,24 @@
       "stats": {
         "cached_tool_calls": 0,
         "chat_errors": 0,
-        "chat_round_trips": 2,
-        "completion_tokens": 120,
-        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) \u2014 /help for commands\ncwd: /private/tmp/12-probe/.scratch-12-edit-file-read-or-write-rep2\n\u00d7 guard fired: read-before-write \u2192 /private/tmp/12-probe/.scratch-12-edit-file-read-or-write-rep2/notes.txt\n\nI'm sorry, but I can't proceed without reading the file first. Please run `read_file` to see its contents.\n\n```bash\nbash \"cat /private/tmp/12-probe/.scratch-12-edit-file-read-or-write-rep2/notes.txt\" --timeout_s 30\n```\n\n",
+        "chat_round_trips": 3,
+        "completion_tokens": 143,
+        "final_answer": "micro-mind (qwen25-1.5b-instruct @ ctx=8192) \u2014 /help for commands\ncwd: /private/tmp/12-recovery/.scratch-12-edit-file-read-or-write-rep2\n\u00d7 guard fired: read-before-write \u2192 /private/tmp/12-recovery/.scratch-12-edit-file-read-or-write-rep2/notes.txt\n\u25b8 read_file path=\"/private/tmp/12-recovery/.scratch-12-e\"\u2026\n  \u2514 ok 0ms 140 bytes\n\nThe file notes.txt contains:\n```\nline one with foo in it\nline two without it\n```\n\nNow, let's edit the 'foo' to 'bar'. Please provide me with the new content for this line.\n\n",
         "guard_fires": 1,
         "guards_by_kind": {
           "read_before_write": 1
         },
-        "native_tool_calls": 1,
-        "prompt_tokens": 2291,
+        "native_tool_calls": 2,
+        "prompt_tokens": 3738,
         "recovered_tool_calls": 0,
         "stop_reason": "FinalAnswer",
-        "tool_calls": 0,
-        "tool_calls_by_name": {},
+        "tool_calls": 1,
+        "tool_calls_by_name": {
+          "read_file": 1
+        },
         "tool_errors": 0,
-        "total_tokens": 2411,
-        "wall_ms": 6414
+        "total_tokens": 3881,
+        "wall_ms": 7758
       },
       "trace_path": "bench/baselines/main/12-edit-file-read-or-write-rep2.jsonl"
     }
