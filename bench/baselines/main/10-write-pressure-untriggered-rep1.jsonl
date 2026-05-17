@@ -1,10 +1,10 @@
-{"payload":{"cwd":"/Users/michaeltimpe/Downloads/micro-mind/bench/baselines/main/.scratch-10-write-pressure-untriggered-rep1","event":"session_start","model":"qwen25-1.5b-instruct","schema_v":3,"tools":["read_file","list_dir","list_files_recursive","grep","write_file","edit_file","bash"]},"ts_ms":1779029586252}
-{"payload":{"event":"chat_request","n_messages":2,"n_tools":7,"turn":0},"ts_ms":1779029586252}
-{"payload":{"completion_tokens":77,"error":null,"event":"chat_response","finish_reason":"tool_calls","native_tool_calls":2,"prompt_tokens":1147,"recovered_tool_calls":0,"total_tokens":1224,"turn":0,"wall_ms":2389},"ts_ms":1779029588642}
-{"payload":{"arguments":{"content":"done","path":"/Users/michaeltimpe/Downloads/micro-mind/bench/baselines/main/.scratch-10-write-pressure-untriggered-rep1/result.txt"},"event":"tool_call","name":"write_file","tool_call_id":"Y5jxueazy9z2EIahGMJasq4KQhhJVQji","turn":0},"ts_ms":1779029588642}
-{"payload":{"bytes_out":141,"cached":false,"error":null,"event":"tool_result","name":"write_file","ok":true,"tool_call_id":"Y5jxueazy9z2EIahGMJasq4KQhhJVQji","turn":0,"wall_ms":8},"ts_ms":1779029588651}
-{"payload":{"arguments":{"path":"."},"event":"tool_call","name":"list_dir","tool_call_id":"eQhbjppCRgZPscN1eXB7OK8jKo9a59J3","turn":0},"ts_ms":1779029588651}
-{"payload":{"bytes_out":35,"cached":false,"error":null,"event":"tool_result","name":"list_dir","ok":true,"tool_call_id":"eQhbjppCRgZPscN1eXB7OK8jKo9a59J3","turn":0,"wall_ms":0},"ts_ms":1779029588651}
-{"payload":{"event":"chat_request","n_messages":7,"n_tools":7,"turn":1},"ts_ms":1779029588651}
-{"payload":{"completion_tokens":33,"error":null,"event":"chat_response","finish_reason":"stop","native_tool_calls":0,"prompt_tokens":1380,"recovered_tool_calls":0,"total_tokens":1413,"turn":1,"wall_ms":912},"ts_ms":1779029589563}
-{"payload":{"event":"stop","final_answer":"Here are the contents of each directory:\n\n- **empty1**: \n- **empty2**:\n- **empty3**:\n- **result.txt**: done","reason":"FinalAnswer","turn":1,"wall_ms":3310},"ts_ms":1779029589563}
+{"payload":{"cwd":"/Users/michaeltimpe/Downloads/micro-mind/bench/baselines/main/.scratch-10-write-pressure-untriggered-rep1","event":"session_start","model":"qwen25-1.5b-instruct","schema_v":3,"tools":["read_file","list_dir","list_files_recursive","grep","write_file","edit_file","bash"]},"ts_ms":1779039899825}
+{"payload":{"event":"chat_request","n_messages":2,"n_tools":7,"turn":0},"ts_ms":1779039899825}
+{"payload":{"completion_tokens":77,"error":null,"event":"chat_response","finish_reason":"tool_calls","native_tool_calls":2,"prompt_tokens":1147,"recovered_tool_calls":0,"total_tokens":1224,"turn":0,"wall_ms":5261},"ts_ms":1779039905086}
+{"payload":{"arguments":{"content":"done","path":"/Users/michaeltimpe/Downloads/micro-mind/bench/baselines/main/.scratch-10-write-pressure-untriggered-rep1/result.txt"},"event":"tool_call","name":"write_file","tool_call_id":"4QcopA2LUFGTptrwmshaoDiLTCChAVpg","turn":0},"ts_ms":1779039905087}
+{"payload":{"bytes_out":141,"cached":false,"error":null,"event":"tool_result","name":"write_file","ok":true,"tool_call_id":"4QcopA2LUFGTptrwmshaoDiLTCChAVpg","turn":0,"wall_ms":13},"ts_ms":1779039905100}
+{"payload":{"arguments":{"path":"."},"event":"tool_call","name":"list_dir","tool_call_id":"wXxLzscZUO4D3Z8Kqrc3dg5WKXI5D0CQ","turn":0},"ts_ms":1779039905100}
+{"payload":{"bytes_out":35,"cached":false,"error":null,"event":"tool_result","name":"list_dir","ok":true,"tool_call_id":"wXxLzscZUO4D3Z8Kqrc3dg5WKXI5D0CQ","turn":0,"wall_ms":0},"ts_ms":1779039905100}
+{"payload":{"event":"chat_request","n_messages":7,"n_tools":7,"turn":1},"ts_ms":1779039905100}
+{"payload":{"completion_tokens":33,"error":null,"event":"chat_response","finish_reason":"stop","native_tool_calls":0,"prompt_tokens":1380,"recovered_tool_calls":0,"total_tokens":1413,"turn":1,"wall_ms":1730},"ts_ms":1779039906831}
+{"payload":{"event":"stop","final_answer":"Here are the contents of each directory:\n\n- **empty1**: \n- **empty2**:\n- **empty3**:\n- **result.txt**: done","reason":"FinalAnswer","turn":1,"wall_ms":7005},"ts_ms":1779039906831}

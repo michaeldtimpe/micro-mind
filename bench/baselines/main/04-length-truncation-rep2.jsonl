@@ -1,5 +1,5 @@
-{"payload":{"cwd":"/Users/michaeltimpe/Downloads/micro-mind","event":"session_start","model":"qwen25-1.5b-instruct","schema_v":3,"tools":["read_file","list_dir","list_files_recursive","grep","write_file","edit_file","bash"]},"ts_ms":1779029422269}
-{"payload":{"event":"chat_request","n_messages":2,"n_tools":7,"turn":0},"ts_ms":1779029422270}
-{"payload":{"completion_tokens":2048,"error":null,"event":"chat_response","finish_reason":"length","native_tool_calls":1,"prompt_tokens":1135,"recovered_tool_calls":0,"total_tokens":3183,"turn":0,"wall_ms":70036},"ts_ms":1779029492306}
-{"payload":{"detail":null,"event":"guard","kind":"length","turn":0},"ts_ms":1779029492307}
-{"payload":{"event":"stop","reason":"Length","turn":0,"wall_ms":70036},"ts_ms":1779029492307}
+{"payload":{"cwd":"/Users/michaeltimpe/Downloads/micro-mind","event":"session_start","model":"qwen25-1.5b-instruct","schema_v":3,"tools":["read_file","list_dir","list_files_recursive","grep","write_file","edit_file","bash"]},"ts_ms":1779039745100}
+{"payload":{"event":"chat_request","n_messages":2,"n_tools":7,"turn":0},"ts_ms":1779039745100}
+{"payload":{"completion_tokens":2048,"error":null,"event":"chat_response","finish_reason":"length","native_tool_calls":1,"prompt_tokens":1135,"recovered_tool_calls":0,"total_tokens":3183,"turn":0,"wall_ms":57830},"ts_ms":1779039802931}
+{"payload":{"detail":null,"event":"guard","kind":"length","turn":0},"ts_ms":1779039802932}
+{"payload":{"event":"stop","reason":"Length","turn":0,"wall_ms":57831},"ts_ms":1779039802932}
