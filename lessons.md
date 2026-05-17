@@ -542,3 +542,35 @@ None of the three families admits a recovery shape that meaningfully improves on
 - `lessons.md` — this entry.
 
 ---
+
+### [2026-05-17] Project close-out: paused indefinitely pending luxe sync
+
+**What happened**: After landing the doc refresh that closed out the post-Phase-B engineering arc at the surface layer (README + CLAUDE + ARCHITECTURE + agents.md all in sync with the current state), the project reached a natural stopping point. **micro-mind is paused indefinitely pending new primitives in [`michaeldtimpe/luxe`](https://github.com/michaeldtimpe/luxe).** No further harness work is planned in this repo until luxe ships something worth porting to the 1.5 B / Rust target.
+
+**State at the close** (anchor for the next reopen):
+
+- **Code**: 148/148 unit tests passing. Schema v3 with `ToolOrigin` provenance + `min_model_tool_calls` compositionality predicate. Auto-read on `read_before_write` via `try_auto_read_for_rbw` + `synthetic_read_call_message` (b-toolresult delivery shape). Every other guard kind has a documented no-op disposition with doctrine cross-reference.
+- **Bench surface**: 13 fixtures × 3 reps = 39/39 canonical baseline replay (gating). Migration-check 60/60 (gating). Four-axis predicate framework (kind × count × provenance × compositionality). Fixture taxonomy split (task-success-deterministic vs guard-intervention-characterization).
+- **Foundation docs**: `bench/PREDICATES.md` (predicate design + audit rubric), `bench/STRESS-PROTOCOL.md` (reps-10 cold-server discipline), `bench/audits/2026-05-17-archive-vs-main.md` (0 hard regressions over two months of work).
+- **Empirical anchors**: `bench/baselines/main/12-stress-envelope.json` (30-rep envelope for fixture 12); `bench/tasks/13a-length-write-file-bulk.toml` (length-probe baseline locking the malformed-args-empirically-empty finding); `bench/archive/12-edit-file-read-or-write-pre-auto-read.toml` (regression canary for pre-(b) recovery shape).
+- **Narrative**: this is `lessons.md`'s sixth 2026-05-17 entry. The five preceding entries cover the full arc end-to-end — original auto-read landing → b-current 4/10 disaster → b-toolresult 87% fix → Phase-C reverted prompt probe → Phase-B envelope codification → Block-1-thru-4 doc framework + length audit.
+
+**Why the pause**: micro-mind takes the harness lessons from luxe and re-targets them at the 1.5 B model in Rust. The dependency is one-directional (luxe → micro-mind). The current micro-mind state already encodes every luxe primitive that's been ported to date; further ports require luxe to land something new worth porting. No internal work is blocked on anything external; the work is just done.
+
+**Tier 4 explicitly skipped**. The post-Phase-B revised plan had two optional research probes parked at Tier 4: a 30-rep (a) probe with stated null hypothesis (narrative-completeness for the "instruction tuning alone plateaued" claim), and a cold-cache delta investigation (mechanism behind the documented prompt_tokens drift). Neither is load-bearing for shipping; both were designed and explicitly not run. The plan exists in conversation history; the items are not encoded as tracked work.
+
+**Reopen condition**: when luxe lands a primitive worth porting. Specific reopen-shaped questions:
+
+- *"luxe added a new tool / guard / recovery — can we port it?"* → yes, follow the doctrine in `bench/PREDICATES.md` (audit rubric → probe-first if recoverable → guard-intervention-characterization fixture if envelope is multi-shape).
+- *"luxe changed its agent loop in shape X — should we mirror?"* → depends on whether the change addresses a 1.5 B failure mode (port) or a 35 B MoE failure mode (probably don't port; harness divergence is fine when the model class differs).
+- *"luxe deprecated primitive Y — does that affect us?"* → probably not, but worth checking `agents.md` and `ARCHITECTURE.md` for cross-references.
+
+**Non-reopen conditions** (do not resume on these alone):
+
+- *"can we do Tier 4 now?"* → only if the user explicitly asks. Don't suggest proactively.
+- *"can we run the bench again?"* → diagnostic, not resumption. Answer yes, point at the canonical baseline.
+- *"can we add fixture X for behavior Y?"* → depends on Y. If Y is new model behavior observed in the field, yes (the bench surface is the right home). If Y is speculative, no.
+
+**Affected files**: README.md (status header), CLAUDE.md (status block at the top so it loads into every Claude Code session immediately), this entry, and a durable project memory at `~/.claude/projects/-Users-michaeltimpe-Downloads-micro-mind/memory/project_state_2026-05-17_paused.md` (the latter for cross-session continuity outside the in-repo docs).
+
+---

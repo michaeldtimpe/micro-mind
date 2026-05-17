@@ -2,6 +2,20 @@
 
 Auto-loaded at session start. Points at the durable design contracts and the short list of project-specific gotchas.
 
+## Project status (2026-05-17): paused pending luxe sync
+
+**No further harness work is planned in this repo until [`michaeldtimpe/luxe`](https://github.com/michaeldtimpe/luxe) lands new primitives worth porting to the 1.5 B / Rust target.** The dependency is one-directional (luxe → micro-mind); micro-mind currently encodes every luxe primitive ported to date. The post-Phase-B engineering arc is closed at every layer (implementation, bench surface, doctrine, empirical envelope, per-guard audit, CI gates, audit artifacts).
+
+**Implications for this session**:
+- Don't propose continuation work (Tier 4 probes, new guard audits, speculative recoveries) unless the user explicitly directs it.
+- If asked *"what's next?"*, surface the parking state and the luxe-sync reopen condition before suggesting work.
+- Diagnostic questions / codebase exploration / one-off fixes are fine and don't constitute resumption.
+- The natural reopen condition is *"luxe shipped X, can we port it?"* — not *"let's pick up where we left off."*
+
+State at the close: 148/148 unit tests, 39/39 canonical baseline replay (gating), 60/60 schema-migration check (gating), foundation docs in `bench/{PREDICATES,STRESS-PROTOCOL}.md`, audit artifacts under `bench/audits/`. Full close-out narrative in `lessons.md` 2026-05-17 (sixth entry).
+
+---
+
 ## Single-model policy
 
 **micro-mind pins exactly one model: `qwen25-1.5b-instruct`** (`~/models/Qwen2.5-1.5B-Instruct-Q8_0.gguf`, GGUF Q8_0, ~1.9 GB). Picked by [`neo-llm-bench`](https://github.com/michaeldtimpe/neo-llm-bench) on 2026-05-14 against the non-dominated quadrilateral. Lead survives matched-ID correction; decline weakness is steerable at the system layer. **Do not introduce model fan-out**: no per-task model selection, no router, no A/B against another model unless the user explicitly asks for a re-bench against `neo-llm-bench`'s finalists.
