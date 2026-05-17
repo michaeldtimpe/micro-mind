@@ -28,8 +28,8 @@ src/
 │  ├─ mod.rs              Session, run_turn — the core loop, StopReason, recorder threading
 │  ├─ context.rs          estimate_tokens, pressure, write-aware elide
 │  ├─ compress.rs         per-tool semantic summarizer (read_file, grep, bash, …)
-│  ├─ coach.rs            harness-level error coaching + failure-memory note
-│  └─ guards.rs           SemanticDedup, ReadTracker, WritePressure, length_truncation_note
+│  ├─ coach.rs            error coaching + dispatch-path & guard-path failure-memory notes
+│  └─ guards.rs           SemanticDedup, ReadTracker, WritePressure, length_truncation_note, first_turn_cold_read_check
 │
 ├─ repl/
 │  ├─ mod.rs              rustyline prompt + slash-command dispatch
@@ -52,7 +52,7 @@ src/
    └─ bench_compare.rs    baseline vs candidate summary.json diff
 ```
 
-Tests live alongside each module (`#[cfg(test)] mod tests`). 119 unit tests across the lib and the bench-* bins as of 2026-05-16 (min_tool_errors predicate landed). Re-run `cargo test --release --all` for the live count; the breakdown drifts as modules grow.
+Tests live alongside each module (`#[cfg(test)] mod tests`). 132 unit tests across the lib and the bench-* bins as of 2026-05-17 (guard-fire predicates + guard_failure_memory_note landed). Re-run `cargo test --release --all` for the live count; the breakdown drifts as modules grow.
 
 ## Runtime flow
 
@@ -107,9 +107,14 @@ loop (max MAX_TURNS=8):
                                                        note, set last_stop=Dedup, break
         if (edit_file && !ReadTracker.has_seen(path))
         OR (write_file && path exists on disk && !ReadTracker.has_seen(path))
-            → record Guard{read_before_write}, push tool-specific refusal stub, continue
+            → record Guard{read_before_write}, push tool-specific refusal stub,
+              push coach::guard_failure_memory_note(tool, "read_before_write")
+              if Some, continue
         if turn == 0 && read_file && path not in user_input
-            → record Guard{cold_read}, push refusal stub, continue
+            → record Guard{cold_read}, push refusal stub,
+              push coach::guard_failure_memory_note(tool, "cold_read") if Some
+              (currently None — wiring is generic, opt-in per-kind in coach),
+              continue
         record ToolCall event
         result = dispatch(name, args, …)              # tool layer enforces 8 KB cap
         coached = coach::coach(&result)               # prepend hint if error matches pattern
@@ -232,6 +237,8 @@ Two variants of the gate by tool:
 
 When the gate fires, the refusal stub is also tool-specific: `edit_file` → "read it first via read_file"; `write_file` → "survey the directory first via list_dir". Different recovery paths.
 
+In addition to the refusal stub, the `continue` branch pushes a system-role failure-memory note via `coach::guard_failure_memory_note(tool, "read_before_write")` — the analog of the dispatch-path `failure_memory_note(call)` injection. The dispatch-path note is what drives placeholder-rejection recovery on 9/10 reps (fixture `11-write-file-placeholder`); wiring the same affordance into the `continue` branch lifted `read_before_write` recovery from 0/3 to first-hop-recovery 3/3 on fixture `12-edit-file-read-or-write`. Closing the *second* hop (model emitting the `edit_file` after the recovery `read_file`) is multi-turn-chain territory the 1.5 B model can't sustain, and is left as future work — see `lessons.md` 2026-05-17.
+
 #### First-turn cold-read (`guards.rs::first_turn_cold_read_check`)
 
 Refuses `read_file` on turn 0 when the path (or its basename) doesn't appear in the user's input. Path `.` is exempt (project survey is always legit). `grep` / `list_dir` / `list_files_recursive` are exempt — they're legitimate exploration tools with generic search paths.
@@ -239,6 +246,8 @@ Refuses `read_file` on turn 0 when the path (or its basename) doesn't appear in 
 Catches the BFCL "spurious tool call on self-answerable prompt" failure: on "What is 17 + 25?" the model emits `read_file("/dev/null")` to satisfy the tool channel, then answers correctly on turn 1. The cost is ~1100 wasted prompt tokens (the system prompt + tool defs re-echoed). Guard intercepts before dispatch; the model's deterministic chain still produces the correct answer on turn 1 from the refusal stub.
 
 Substring match is case-insensitive against the canonicalized path and its basename. False positives result in a recoverable refusal — the model gets the note and can retry with a path the user referenced or answer directly.
+
+Like the `read_before_write` branch, this `continue` path also calls `coach::guard_failure_memory_note(tool, "cold_read")` — the function returns `None` today (the refusal stub already steers toward "answer the user directly"), so the call is a no-op, but the wiring is in place so a future kind that benefits from a failure-memory nudge opts in by adding its case to the `match` in `coach.rs`.
 
 #### Write-pressure exit (`guards.rs::WritePressure`)
 
@@ -288,7 +297,10 @@ Inspects errors and bash non-zero exits for known patterns; appends a hint after
 | `bash: timeout` | "Increase timeout_s or narrow the command." |
 | stderr: `unrecognized option`, `command not found`, `No such file`, `Permission denied` | situational hints |
 
-Also injects a synthetic system-role "do not repeat the same call unchanged" note after every error result.
+Also injects a synthetic system-role "do not repeat the same call unchanged" note after every error result, via two parallel functions:
+
+- `coach::failure_memory_note(call: &ToolCallResult) -> Option<String>` — called from the dispatch path. Returns `Some` iff the call carried an error. This is what makes placeholder-rejection recovery work on `11-write-file-placeholder`.
+- `coach::guard_failure_memory_note(tool: &str, kind: &str) -> Option<String>` — called from the `continue`-style guard branches that short-circuit before reaching `dispatch`. Keyed off the guard kind: returns `Some` only for kinds where retry-with-different-shape is the productive outcome. Today that's just `read_before_write`; `cold_read` / `dedup` / `write_pressure` / `length` / `turn_cap` all return `None`. New kinds opt in by adding their case to the `match` — the call site in `agent/mod.rs` is generic.
 
 #### Length-truncation exit (`agent/mod.rs` + `guards.rs::length_truncation_note`)
 
@@ -308,7 +320,7 @@ The agent loop emits JSONL events when `--record <dir>` is passed:
 - `chat_request` — pre-POST. `turn`, `n_messages`, `n_tools`.
 - `chat_response` — post-decode. `finish_reason`, `wall_ms`, native + recovered tool_call counts, OpenAI-style `usage` (prompt/completion/total tokens).
 - `tool_call` / `tool_result` — every dispatch, before and after. `wall_ms`, `bytes_out`, `cached`, `error`.
-- `guard` — every guard fire. `kind` ∈ {`dedup`, `read_before_write`, `write_pressure`, `length`, `turn_cap`}.
+- `guard` — every guard fire. `kind` ∈ {`dedup`, `read_before_write`, `cold_read`, `write_pressure`, `length`, `turn_cap`}. Counted by kind in `Summary::guards_by_kind` and totalled in `Summary::guard_fires`; both are exposed as fixture predicates (`must_fire_guards` / `must_not_fire_guards` / `min`/`max_guard_fires`).
 - `stop` — end of `run_turn`. Carries `final_answer` (v2) — the last non-empty assistant content, used by `bench-replay` to validate `expect.must_contain` offline.
 
 Full schema in `obs/schema.md`. The recorder is a trait; the default is `NoopRecorder` (zero-cost when recording is disabled). `JsonlRecorder` is best-effort — a failed write is logged once to stderr and subsequent events are dropped, never breaking the run.
@@ -356,7 +368,7 @@ Decisions deliberately made for v1:
 ```bash
 cargo build               # debug
 cargo build --release     # ~2.6 MB stripped (micro-mind), bench-* bins also produced
-cargo test                # 114 unit tests, no model required
+cargo test                # 132 unit tests, no model required
 cargo clippy -- -D warnings   # gating, zero-warning floor
 cargo fmt --all --check       # gating
 ```
@@ -379,7 +391,7 @@ CI is hermetic: no llama-server, no GPU. The chain there is `cargo fmt
 --check` → `cargo clippy -D warnings` → `cargo test --all-targets` → schema
 validate the sample trace → replay sample trace against sample fixture →
 summarize sample trace → **gating replay** of `bench/baselines/main/`
-(every predicate must hold; currently 11 fixtures × 3 reps = 33/33) →
+(every predicate must hold; currently 12 fixtures × 3 reps = 36/36) →
 **advisory replay** of every directory under `bench/baselines/archive/`
 (`continue-on-error: true`; historical drift surfaces but doesn't gate).
 

@@ -7,7 +7,7 @@ piece stays easy to read.
 ```
 bench/
 ├── README.md            ← you are here
-├── tasks/               ← TOML fixtures, one per task (11 today)
+├── tasks/               ← TOML fixtures, one per task (12 today)
 │   ├── 01-read-readme.toml
 │   ├── 02-list-rust-files.toml
 │   ├── 03-decline-irrelevant.toml
@@ -18,7 +18,8 @@ bench/
 │   ├── 08-bash.toml
 │   ├── 09-dedup-untriggered.toml
 │   ├── 10-write-pressure-untriggered.toml
-│   └── 11-write-file-placeholder.toml
+│   ├── 11-write-file-placeholder.toml
+│   └── 12-edit-file-read-or-write.toml
 ├── runs/                ← outputs land here, one subdir per run (gitignored)
 ├── samples/             ← checked-in reference trace + fixture for CI
 │   ├── sample-trace.jsonl
@@ -34,11 +35,20 @@ The `*-untriggered` fixtures pin the *non-firing* behavior of guards
 that are structurally unreachable on `qwen25-1.5b-instruct` at temp=0
 (`SemanticDedup`, `WritePressure`). They're regression anchors — if a
 future model swap or system-prompt rev starts triggering the guard,
-the predicate flip catches it. `11-write-file-placeholder` is the
-inverse: a *positive* guard-fire fixture where `write_file`'s
-placeholder-rejection guard fires deterministically and the model's
-recovery (or runaway-loop-into-Dedup fallback) is observed. See
-`lessons.md` 2026-05-16 for the three relevant findings.
+the predicate flip catches it.
+
+Two *positive* guard-fire fixtures complement the anchors:
+- `11-write-file-placeholder` — `write_file`'s placeholder-rejection
+  guard fires deterministically; recovery (9/10) and runaway-loop-into-
+  Dedup (1/10) are both correct outcomes, predicates accept both. See
+  `lessons.md` 2026-05-16.
+- `12-edit-file-read-or-write` — `read_before_write` for `edit_file`
+  fires deterministically; partial-recovery shape (1 tool_call,
+  `read_file`, model delegates the second hop back to the user) is
+  locked as the regression anchor. See `lessons.md` 2026-05-17 (both
+  entries — the initial 0/3 recovery finding was superseded the same
+  day by wiring `coach::guard_failure_memory_note` into the guard
+  path).
 
 ## Quick start
 
@@ -88,24 +98,41 @@ content  = "The quick brown fox jumps over the lazy dog.\n"
 seed_dirs = ["empty1", "empty2"]
 
 [expect]
-stop_reason       = "FinalAnswer"     # FinalAnswer | TurnCap | WritePressure | Dedup | Length | Error
-min_tool_calls    = 1
-max_tool_calls    = 4
-must_call_any_of  = ["read_file", "grep"]   # at least one of these must be called
-must_call_all_of  = ["read_file", "edit_file"]  # every entry must be called at least once
-must_not_call     = ["write_file", "edit_file"]
-min_tool_errors   = 1                  # at-least-N tool results with ok=false
-max_tool_errors   = 2                  # at-most-N — bounds recovery-loop behavior
-max_wall_ms       = 60000
-max_total_tokens  = 4096
+stop_reason          = "FinalAnswer"  # FinalAnswer | TurnCap | WritePressure | Dedup | Length | Error
+min_tool_calls       = 1
+max_tool_calls       = 4
+must_call_any_of     = ["read_file", "grep"]   # at least one of these must be called
+must_call_all_of     = ["read_file", "edit_file"]  # every entry must be called at least once
+must_not_call        = ["write_file", "edit_file"]
+min_tool_errors      = 1               # at-least-N tool results with ok=false
+max_tool_errors      = 2               # at-most-N — bounds recovery-loop behavior
+must_fire_guards     = ["cold_read"]   # every entry must fire at least once (kind axis)
+must_not_fire_guards = ["read_before_write"]   # symmetric — none of these may fire
+min_guard_fires      = 1               # total count across all kinds (count axis)
+max_guard_fires      = 1               # orthogonal to must_fire_guards
+max_wall_ms          = 60000
+max_total_tokens     = 4096
 
 [expect.must_contain]
-text              = "agent"           # substring in the final answer
-case_insensitive  = true              # default true
+text                 = "agent"        # substring in the final answer
+case_insensitive     = true           # default true
 ```
 
 All `expect.*` fields are optional. Empty `[expect]` = "anything goes,
 just record a trace."
+
+**Guard-fire predicate orthogonality.** Kind predicates
+(`must_fire_guards` / `must_not_fire_guards`) answer "which guard
+kinds fired?"; count predicates (`min_guard_fires` /
+`max_guard_fires`) answer "how many total fires occurred?". They are
+checked independently — a kind mismatch and a count mismatch each
+generate their own failure message. Diagnostics enumerate fired kinds
+from a `BTreeSet`, so when a `must_fire_guards` expectation fails the
+"seen" list in the message is sorted and stable across runs. See
+`src/bench/summary.rs::check_expectations`. Currently observed kinds:
+`cold_read`, `read_before_write`, `length`, `dedup`, `write_pressure`,
+`turn_cap`. New kinds added to `src/agent/guards.rs` will surface
+automatically — no schema change required.
 
 ## Binaries
 
@@ -134,7 +161,7 @@ The GitHub Actions workflow at `.github/workflows/ci.yml`:
 4. `bench-summarize --md` to verify the markdown writer.
 5. **`bench-replay --all bench/tasks --runs bench/baselines/main` — the
    canonical baseline gate.** Every committed trace must satisfy every
-   fixture predicate. Currently 10 fixtures × 3 reps = 30/30.
+   fixture predicate. Currently 12 fixtures × 3 reps = 36/36.
 6. Loop over `bench/baselines/archive/*/` and replay each advisorily
    (`continue-on-error: true`). Historical drift surfaces in logs but
    doesn't gate.

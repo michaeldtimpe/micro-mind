@@ -83,11 +83,18 @@ loop (max MAX_TURNS=8 turns):
         if SemanticDedup catches a 3-in-a-row loop
             → inject system note, stop=Dedup, break
         if edit_file && target unread in this turn
-            → return tool-failure stub ("read it first"), continue
+            → return tool-failure stub ("read it first"),
+              push coach::guard_failure_memory_note for read_before_write,
+              continue
         if write_file && target exists on disk && unread in this turn
-            → return tool-failure stub ("survey first via list_dir"), continue
+            → return tool-failure stub ("survey first via list_dir"),
+              push coach::guard_failure_memory_note for read_before_write,
+              continue
         if turn == 0 && read_file && user input doesn't mention this path
-            → return tool-failure stub ("user didn't reference this"), continue
+            → return tool-failure stub ("user didn't reference this"),
+              call coach::guard_failure_memory_note for cold_read
+              (currently returns None — wiring is generic, opt-in per-kind),
+              continue
         record ToolCall event
         result = dispatch(name, args, …)
             (8 KB hard cap applied here)
@@ -105,7 +112,7 @@ loop (max MAX_TURNS=8 turns):
 record Stop event (turn, reason, wall_ms, final_answer)
 ```
 
-Stop reasons emitted into the `stop.reason` field of JSONL traces: `FinalAnswer`, `TurnCap`, `WritePressure`, `Dedup`, `Length`, `Error(String)`. Any can be referenced as a fixture predicate (`stop_reason = "..."`); current fixtures only assert `FinalAnswer` (the recovery / happy path on most fixtures) and `Length` (fixture `04-length-truncation`). The `-untriggered` fixtures (`09`, `10`) deliberately *don't* lock a stop reason because the guard they target isn't reached on this model, and `11-write-file-placeholder` omits it because both `FinalAnswer` (recovery) and `Dedup` (runaway-loop safety net) are correct outcomes — see `lessons.md` 2026-05-16.
+Stop reasons emitted into the `stop.reason` field of JSONL traces: `FinalAnswer`, `TurnCap`, `WritePressure`, `Dedup`, `Length`, `Error(String)`. Any can be referenced as a fixture predicate (`stop_reason = "..."`); current fixtures assert `FinalAnswer` (the recovery / happy path on most fixtures) or `Length` (fixture `04-length-truncation`). The `-untriggered` fixtures (`09`, `10`) deliberately *don't* lock a stop reason because the guard they target isn't reached on this model, and `11-write-file-placeholder` omits it because both `FinalAnswer` (recovery) and `Dedup` (runaway-loop safety net) are correct outcomes — see `lessons.md` 2026-05-16. Fixture `12-edit-file-read-or-write` does lock `FinalAnswer` but the *call-shape* axis is what moves between harness revisions: pre-Commit-E (anchor) the model emitted zero dispatched tool_calls; post-Commit-E (current baseline) it dispatches exactly one (`read_file`) — see `lessons.md` 2026-05-17 (both entries). The kind-axis predicates (`must_fire_guards = ["read_before_write"]`, `max_guard_fires = 1`) are invariant across both, demonstrating the orthogonality of the guard-fire predicate set.
 
 Two response shapes are handled:
 
