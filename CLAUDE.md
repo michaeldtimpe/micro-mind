@@ -107,10 +107,30 @@ When the model fails a task, the **first** question is "which layer should catch
 |---|---|
 | `bench-run` | Drive `micro-mind` as a subprocess against every fixture in `bench/tasks/*.toml`, write per-rep JSONL traces + `summary.json`. Refuses fixtures whose prompt could short-circuit the REPL on stdin. Needs a working llama-server. |
 | `bench-summarize` | Aggregate one or more JSONL traces into a text or markdown table (tools, tokens, wall_ms, stop). |
-| `bench-replay` | Validate a trace against a fixture *without* running the model — the CI gate. Schema-only mode is also supported. |
-| `bench-compare` | Diff a candidate `summary.json` against a baseline; exits 1 on outcome regression, 2 on soft regression (latency/tokens beyond `--wall-pct` / `--tokens-pct`). |
+| `bench-replay` | Validate a trace against a fixture *without* running the model — the CI gate. Modes: `--fixture F --trace T` (single), `--all DIR --runs DIR` (batch), `--trace T --schema-only` (parse-only), `--migration-check DIR` (deserialization-compat gate, see schema v3 contract). |
+| `bench-compare` | Diff a candidate `summary.json` against a baseline; exits 1 on outcome regression, 2 on soft regression (latency/tokens beyond `--wall-pct` / `--tokens-pct`). Audit artifacts under `bench/audits/`. |
 
-As of schema v2, the `stop` event carries `final_answer`, so `bench-replay` can fully validate `expect.must_contain` from a trace alone. Pre-v2 traces (no `schema_v` field on `session_start`) still fail-closed on that predicate unless bench-run's stdout capture fills it. See `obs/schema.md` for the version policy.
+Schema v3 carries `final_answer` on `Stop` events (added v2) and `origin`
+on `ToolCall`/`ToolResult` events (added v3 — distinguishes model-emitted
+from harness-injected synthetic calls). Pre-v3 traces parse cleanly with
+the optional fields defaulting to None. CI gates on `bench-replay
+--migration-check bench/baselines` (deserialization-compat, 60/60); see
+[`obs/schema.md`](obs/schema.md) "Schema-migration compatibility surface"
+for the pinned-vs-not-pinned field contract.
+
+Companion docs under `bench/`:
+
+- [`bench/PREDICATES.md`](bench/PREDICATES.md) — four-axis predicate
+  design framework (kind × count × provenance × compositionality) +
+  guard audit rubric (local-safe + systemic-safe split) + fixture
+  taxonomy split (task-success-deterministic vs guard-intervention-
+  characterization). Read before adding a new fixture predicate.
+- [`bench/STRESS-PROTOCOL.md`](bench/STRESS-PROTOCOL.md) — reps-10
+  cold-server discipline. Distinguishes stochasticity vs cache effects
+  vs structural multimodality. Required reading before adding a new
+  guard-intervention characterization fixture.
+- [`bench/audits/`](bench/audits/) — versioned `bench-compare`
+  artifacts (e.g., `2026-05-17-archive-vs-main.md`).
 
 ## Tool surface decisions
 

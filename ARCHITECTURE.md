@@ -52,7 +52,13 @@ src/
    └─ bench_compare.rs    baseline vs candidate summary.json diff
 ```
 
-Tests live alongside each module (`#[cfg(test)] mod tests`). 132 unit tests across the lib and the bench-* bins as of 2026-05-17 (guard-fire predicates + guard_failure_memory_note landed). Re-run `cargo test --release --all` for the live count; the breakdown drifts as modules grow.
+Tests live alongside each module (`#[cfg(test)] mod tests`). **148 unit tests** across the lib and the bench-* bins as of 2026-05-17 (post-Phase-B auto-read landing + Block 1–4 doc framework + Block 3 length audit). Re-run `cargo test --release --all` for the live count; the breakdown drifts as modules grow.
+
+Companion documentation under `bench/`:
+
+- [`bench/PREDICATES.md`](bench/PREDICATES.md) — four-axis predicate design framework (kind × count × provenance × compositionality), fixture taxonomy split, guard audit rubric with local-safe + systemic-safe split.
+- [`bench/STRESS-PROTOCOL.md`](bench/STRESS-PROTOCOL.md) — reps-10 cold-server discipline for envelope characterization. Distinguishes stochasticity, cache effects, and structural multimodality.
+- [`bench/audits/`](bench/audits/) — versioned audit artifacts from `bench-compare` runs.
 
 ## Runtime flow
 
@@ -368,7 +374,7 @@ Decisions deliberately made for v1:
 ```bash
 cargo build               # debug
 cargo build --release     # ~2.6 MB stripped (micro-mind), bench-* bins also produced
-cargo test                # 132 unit tests, no model required
+cargo test                # 148 unit tests, no model required
 cargo clippy -- -D warnings   # gating, zero-warning floor
 cargo fmt --all --check       # gating
 ```

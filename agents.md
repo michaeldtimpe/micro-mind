@@ -82,13 +82,20 @@ loop (max MAX_TURNS=8 turns):
     for each tool_call:
         if SemanticDedup catches a 3-in-a-row loop
             → inject system note, stop=Dedup, break
-        if edit_file && target unread in this turn
-            → return tool-failure stub ("read it first"),
-              push coach::guard_failure_memory_note for read_before_write,
-              continue
-        if write_file && target exists on disk && unread in this turn
-            → return tool-failure stub ("survey first via list_dir"),
-              push coach::guard_failure_memory_note for read_before_write,
+        if edit_file && target unread in this turn,
+           or write_file && target exists on disk && unread in this turn:
+            → record Guard{read_before_write},
+              push refusal note as tool_result for the blocked tool_call_id,
+              try try_auto_read_for_rbw (bounded by 24 KB + 800-line cap):
+                on success
+                  → push synthetic assistant message with tool_call(read_file)
+                    + paired tool_result with origin=SyntheticGuardRecovery
+                    (b-toolresult delivery shape — see lessons.md 2026-05-17 fourth entry);
+                    ReadTracker.record_read(read_file, target) so the model's
+                    retry on the next turn doesn't re-trigger the guard.
+                on failure (read errored or exceeded line cap)
+                  → fall back: push coach::guard_failure_memory_note
+                    for read_before_write.
               continue
         if turn == 0 && read_file && user input doesn't mention this path
             → return tool-failure stub ("user didn't reference this"),
@@ -112,7 +119,7 @@ loop (max MAX_TURNS=8 turns):
 record Stop event (turn, reason, wall_ms, final_answer)
 ```
 
-Stop reasons emitted into the `stop.reason` field of JSONL traces: `FinalAnswer`, `TurnCap`, `WritePressure`, `Dedup`, `Length`, `Error(String)`. Any can be referenced as a fixture predicate (`stop_reason = "..."`); current fixtures assert `FinalAnswer` (the recovery / happy path on most fixtures) or `Length` (fixture `04-length-truncation`). The `-untriggered` fixtures (`09`, `10`) deliberately *don't* lock a stop reason because the guard they target isn't reached on this model, and `11-write-file-placeholder` omits it because both `FinalAnswer` (recovery) and `Dedup` (runaway-loop safety net) are correct outcomes — see `lessons.md` 2026-05-16. Fixture `12-edit-file-read-or-write` does lock `FinalAnswer` but the *call-shape* axis is what moves between harness revisions: pre-Commit-E (anchor) the model emitted zero dispatched tool_calls; post-Commit-E (current baseline) it dispatches exactly one (`read_file`) — see `lessons.md` 2026-05-17 (both entries). The kind-axis predicates (`must_fire_guards = ["read_before_write"]`, `max_guard_fires = 1`) are invariant across both, demonstrating the orthogonality of the guard-fire predicate set.
+Stop reasons emitted into the `stop.reason` field of JSONL traces: `FinalAnswer`, `TurnCap`, `WritePressure`, `Dedup`, `Length`, `Error(String)`. Any can be referenced as a fixture predicate (`stop_reason = "..."`); fixtures assert `FinalAnswer` (the recovery / happy path on most fixtures) or `Length` (fixture `04-length-truncation`). The `-untriggered` fixtures (`09`, `10`) deliberately *don't* lock a stop reason because the guard they target isn't reached on this model; `11-write-file-placeholder` omits it because both `FinalAnswer` (recovery) and `Dedup` (runaway-loop safety net) are correct outcomes (`lessons.md` 2026-05-16); and `12-edit-file-read-or-write` — now reclassified as a *guard-intervention characterization* fixture — also omits `stop_reason` because both `FinalAnswer` and `Length` appear in its 4-shape stochastic envelope (`lessons.md` 2026-05-17 fourth entry; envelope at `bench/baselines/main/12-stress-envelope.json`). The fixture-12 call-shape axis has moved through three harness revisions: pre-Commit-E (anchor, 0 dispatched tool_calls); post-Commit-E first-hop-only (1 dispatched `read_file`); **current b-toolresult** (1 synthetic `read_file` from the harness + at least 1 model-emitted call, locked via `min_model_tool_calls = 1`). Pre-(b) shape preserved at `bench/archive/12-edit-file-read-or-write-pre-auto-read.toml` as a regression canary. The kind-axis predicates (`must_fire_guards = ["read_before_write"]`, `max_guard_fires = 2`) are invariant across all three revisions, demonstrating the orthogonality of the guard-fire predicate set. See [`bench/PREDICATES.md`](bench/PREDICATES.md) for the four-axis predicate framework (kind × count × provenance × compositionality).
 
 Two response shapes are handled:
 
