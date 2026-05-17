@@ -478,3 +478,19 @@ The principle: when the model has multiple stable continuations at the BFCL mult
 - `bench/baselines/main/` — re-baselined fixture 12 with b-toolresult traces (1 verify + 2 clean shapes out of 3 reps); full suite 36/36; `12-stress-envelope.json` added as the canonical 30-rep regression artifact.
 
 ---
+
+### [2026-05-17] Why fixture 11 won't get an auto-recovery: closed as written rejection
+
+**What happened**: After the auto-read landing on `read_before_write` (fixture 12), the obvious adjacent question was *"why not the same treatment for `write_file`'s placeholder rejection on fixture 11?"* — the model emits `// TODO: implement` as a function body, the tool layer rejects with the "placeholder" honesty guard, and the model recovers 9/10 reps but loops into Dedup the 10th (lessons.md 2026-05-16). An auto-stub recovery (harness rewrites the placeholder to a typed-stub from the function signature) would in principle close the 1/10 gap.
+
+Closed without empirical probe. The categorical reason: **read-before-write recovery works because the model lacked *information* the harness could safely provide; placeholder writes are different because the model has the *affordance* but emits *low-integrity content*.** Auto-stubbing converts "agent failed honesty/integrity check" into "harness silently manufactures acceptable content" — a categorically different kind of intervention than satisfying a precondition, and one that changes the authorship semantics in a way read-recovery does not.
+
+The (b) auto-read satisfies a precondition (read the file before modifying); the model's *intent* is preserved verbatim, just executed after the precondition is discharged. An auto-stub would *originate* content the model never specified, attributed to the model. That's a boundary that should hold regardless of whether the resulting content happens to compile.
+
+**Fix / takeaway**: no code change. Recorded here as doctrine: *"the harness synthesizes preconditions (information the model needed), not substance (content the model would have authored)."* The systemic-safety column of the audit rubric in `bench/PREDICATES.md` is the rule-encoded form of this principle.
+
+**Re-open condition**: this door can be re-opened if the harness gains a *mechanically-derivable transformation* from placeholder content to non-placeholder content with preserved provenance — e.g., a typed-stub generator that produces `unimplemented!()` from a Rust function signature, attributed in the trace as `origin = SyntheticGuardRecovery { guard: "placeholder_rejection" }`, with the model's original `// TODO` retained in the conversation as counterfactual visibility. The transformation must be (a) mechanical (no model judgment), (b) provenance-preserving (clear in the trace that the stub came from the harness), and (c) systemically safe (doesn't generalize to "harness silently fixes any rejected output"). Until those three properties can be jointly demonstrated for a candidate transformation, the door stays closed.
+
+**Affected files**: none. Documentation-only closure.
+
+---
