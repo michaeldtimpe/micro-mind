@@ -110,10 +110,14 @@ impl Session {
 
 /// Attempt to recover from a `read_before_write` guard fire by performing
 /// a bounded `read_file` ourselves and returning its content. On success
-/// the caller surfaces the content to the model as a system note plus
-/// retry instruction, collapsing the two-hop chain (refusal → model reads
-/// → model retries with edit) into the single hop the 1.5 B model can
-/// sustain on the 0% BFCL multi-turn floor (see `lessons.md` 2026-05-17).
+/// the caller delivers the content to the model as a synthetic
+/// `tool_call(read_file)` + paired `tool_result` (b-toolresult shape —
+/// see `synthetic_read_call_message`), collapsing the two-hop chain
+/// (refusal → model reads → model retries with edit) into the single
+/// hop the 1.5 B model can sustain on the 0% BFCL multi-turn floor.
+/// Achieves 87% task success across 30 cold-server stress reps; see
+/// `lessons.md` 2026-05-17 (fourth entry) and
+/// `bench/baselines/main/12-stress-envelope.json`.
 ///
 /// Bounding:
 ///   - The `read_file` tool layer enforces its own byte cap (24 KB default
@@ -135,6 +139,19 @@ impl Session {
 ///     `write_file`/`edit_file`; `read_before_write` only fires on the
 ///     latter, so the auto-read cannot itself trigger another auto-read.
 ///     The single-hop guarantee is structural, not policy.
+///
+/// Generalization marker (do NOT lift yet):
+///   - If a second guard kind earns an auto-recovery affordance per the
+///     audit rubric in `bench/PREDICATES.md` (today only
+///     `read_before_write` qualifies — `length` is the most plausible
+///     second candidate pending the probe in Tier 2.2 of the post-Phase-B
+///     plan), the right lift is a `recovery_action: Option<SyntheticTool>`
+///     shape carried on guard kinds at config time, with this function
+///     becoming the dispatch for `SyntheticTool::ReadFile`. Premature
+///     until that second user genuinely exists — see the abstraction-lift
+///     gate documented in the post-(b) revised plan. Keep this comment as
+///     the design-intent marker so the lift, when it happens, doesn't
+///     have to be reverse-engineered from the call site.
 fn try_auto_read_for_rbw(
     recorder: &dyn Recorder,
     tools_by_name: &HashMap<String, ToolDef>,
