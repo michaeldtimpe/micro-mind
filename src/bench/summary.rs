@@ -4,7 +4,7 @@
 //! Pure data — no I/O. The bin wrappers handle file paths.
 
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::bench::fixture::Fixture;
 use crate::bench::trace::TraceEvent;
@@ -189,6 +189,41 @@ pub fn check_expectations(fx: &Fixture, s: &Summary) -> Vec<String> {
         && s.tool_errors > max
     {
         fails.push(format!("tool_errors={} > max={max}", s.tool_errors));
+    }
+    // Guard predicates. Kind predicates ("which?") and count predicates
+    // ("how many?") are intentionally orthogonal: each generates its own
+    // failure message so diagnostics stay precise. Fired kinds are pulled
+    // into a sorted set once so failure messages enumerate kinds
+    // deterministically.
+    let fired_kinds: BTreeSet<&str> = s.guards_by_kind.keys().map(|k| k.as_str()).collect();
+    for required in &fx.expect.must_fire_guards {
+        if !s.guards_by_kind.contains_key(required) {
+            let seen: Vec<&str> = fired_kinds.iter().copied().collect();
+            fails.push(format!(
+                "must_fire_guards: missing {} (saw: {})",
+                required,
+                if seen.is_empty() {
+                    "<none>".to_string()
+                } else {
+                    seen.join(",")
+                }
+            ));
+        }
+    }
+    for forbidden in &fx.expect.must_not_fire_guards {
+        if s.guards_by_kind.contains_key(forbidden) {
+            fails.push(format!("forbidden guard fire: {forbidden}"));
+        }
+    }
+    if let Some(min) = fx.expect.min_guard_fires
+        && s.guard_fires < min
+    {
+        fails.push(format!("guard_fires={} < min={min}", s.guard_fires));
+    }
+    if let Some(max) = fx.expect.max_guard_fires
+        && s.guard_fires > max
+    {
+        fails.push(format!("guard_fires={} > max={max}", s.guard_fires));
     }
     if let Some(max) = fx.expect.max_wall_ms
         && s.wall_ms > max
@@ -430,6 +465,141 @@ mod tests {
         let fx = Fixture::from_toml_str(fx_src).unwrap();
         let s = Summary {
             final_answer: Some("the answer is forty-two indeed".into()),
+            ..Default::default()
+        };
+        assert!(check_expectations(&fx, &s).is_empty());
+    }
+
+    fn summary_with_guards(total: u32, kinds: &[(&str, u32)]) -> Summary {
+        let mut by_kind = BTreeMap::new();
+        for (k, n) in kinds {
+            by_kind.insert((*k).to_string(), *n);
+        }
+        Summary {
+            guard_fires: total,
+            guards_by_kind: by_kind,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn must_fire_guards_passes_when_kind_present() {
+        let fx_src = r#"
+            id = "t"
+            prompt = "p"
+            [expect]
+            must_fire_guards = ["cold_read"]
+        "#;
+        let fx = Fixture::from_toml_str(fx_src).unwrap();
+        let s = summary_with_guards(1, &[("cold_read", 1)]);
+        assert!(check_expectations(&fx, &s).is_empty());
+    }
+
+    #[test]
+    fn must_fire_guards_fails_with_sorted_seen_list_when_missing() {
+        let fx_src = r#"
+            id = "t"
+            prompt = "p"
+            [expect]
+            must_fire_guards = ["cold_read"]
+        "#;
+        let fx = Fixture::from_toml_str(fx_src).unwrap();
+        // Pass kinds in non-sorted order; expect the diagnostic to
+        // enumerate them sorted (BTreeSet -> stable output).
+        let s = summary_with_guards(2, &[("length", 1), ("dedup", 1)]);
+        let fails = check_expectations(&fx, &s);
+        assert_eq!(fails.len(), 1);
+        assert!(fails[0].contains("missing cold_read"));
+        assert!(
+            fails[0].contains("dedup,length"),
+            "diagnostics should enumerate seen kinds sorted: {}",
+            fails[0]
+        );
+    }
+
+    #[test]
+    fn must_fire_guards_fails_with_none_marker_when_nothing_fired() {
+        let fx_src = r#"
+            id = "t"
+            prompt = "p"
+            [expect]
+            must_fire_guards = ["cold_read"]
+        "#;
+        let fx = Fixture::from_toml_str(fx_src).unwrap();
+        let s = Summary::default();
+        let fails = check_expectations(&fx, &s);
+        assert_eq!(fails.len(), 1);
+        assert!(fails[0].contains("<none>"));
+    }
+
+    #[test]
+    fn must_not_fire_guards_fails_when_kind_present() {
+        let fx_src = r#"
+            id = "t"
+            prompt = "p"
+            [expect]
+            must_not_fire_guards = ["cold_read"]
+        "#;
+        let fx = Fixture::from_toml_str(fx_src).unwrap();
+        let s = summary_with_guards(1, &[("cold_read", 1)]);
+        let fails = check_expectations(&fx, &s);
+        assert!(
+            fails
+                .iter()
+                .any(|f| f.contains("forbidden guard fire: cold_read"))
+        );
+    }
+
+    #[test]
+    fn min_guard_fires_failure_distinct_from_kind_failure() {
+        // Orthogonality: if the required kind fired but total count is too
+        // low (impossible in practice but tests the predicate independence),
+        // we get a count-shaped failure, not a kind-shaped one.
+        let fx_src = r#"
+            id = "t"
+            prompt = "p"
+            [expect]
+            must_fire_guards = ["cold_read"]
+            min_guard_fires = 2
+        "#;
+        let fx = Fixture::from_toml_str(fx_src).unwrap();
+        let s = summary_with_guards(1, &[("cold_read", 1)]);
+        let fails = check_expectations(&fx, &s);
+        assert_eq!(fails.len(), 1, "{fails:?}");
+        assert!(fails[0].contains("guard_fires=1 < min=2"));
+    }
+
+    #[test]
+    fn max_guard_fires_failure_when_exceeded() {
+        let fx_src = r#"
+            id = "t"
+            prompt = "p"
+            [expect]
+            max_guard_fires = 1
+        "#;
+        let fx = Fixture::from_toml_str(fx_src).unwrap();
+        let s = summary_with_guards(3, &[("cold_read", 3)]);
+        let fails = check_expectations(&fx, &s);
+        assert!(fails.iter().any(|f| f.contains("guard_fires=3 > max=1")));
+    }
+
+    #[test]
+    fn pre_schema_trace_passes_fixture_without_new_predicates() {
+        // Backward-compat: a fixture that omits every guard predicate must
+        // pass against a Summary whose `guards_by_kind` is empty (the shape
+        // produced by replaying any pre-cold_read-guard trace). This is the
+        // contract that lets `bench-replay --all` stay green across the
+        // schema bump.
+        let fx_src = r#"
+            id = "t"
+            prompt = "p"
+            [expect]
+            stop_reason = "FinalAnswer"
+        "#;
+        let fx = Fixture::from_toml_str(fx_src).unwrap();
+        let s = Summary {
+            stop_reason: Some("FinalAnswer".into()),
+            // guards_by_kind and guard_fires intentionally default
             ..Default::default()
         };
         assert!(check_expectations(&fx, &s).is_empty());

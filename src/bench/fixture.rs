@@ -78,6 +78,30 @@ pub struct TaskExpect {
     /// the model is looping on the same failure".
     #[serde(default)]
     pub max_tool_errors: Option<u32>,
+    /// Pass only if every guard kind in this list fired at least once.
+    /// Matches `guards_by_kind` from the trace. Use to positively assert
+    /// a specific guard intervened — e.g. `must_fire_guards = ["cold_read"]`
+    /// for a fixture that bait `first_turn_cold_read_check`. Kind strings
+    /// match the `kind` field on `Event::Guard` (`cold_read`, `dedup`,
+    /// `read_before_write`, `length`, `write_pressure`, `turn_cap`).
+    #[serde(default)]
+    pub must_fire_guards: Vec<String>,
+    /// Fail if any of these guard kinds fired. Symmetric counterpart to
+    /// `must_fire_guards`. Use to lock the absence of accidental guard
+    /// fires that would indicate a different bug than the one a fixture
+    /// targets (e.g. a non-fire anchor that should never trip cold_read).
+    #[serde(default)]
+    pub must_not_fire_guards: Vec<String>,
+    /// Lower bound on total `guard_fires` across all kinds. Orthogonal to
+    /// `must_fire_guards`: kind predicates answer "which?", count
+    /// predicates answer "how many?".
+    #[serde(default)]
+    pub min_guard_fires: Option<u32>,
+    /// Upper bound on total `guard_fires` across all kinds. Use to bound
+    /// recovery behavior — e.g. `max_guard_fires = 1` admits a single
+    /// dedup-safety-net branch but rejects runaway loops.
+    #[serde(default)]
+    pub max_guard_fires: Option<u32>,
     /// Hard upper bound on `stop.wall_ms` from the JSONL trace.
     #[serde(default)]
     pub max_wall_ms: Option<u64>,
@@ -211,6 +235,10 @@ mod tests {
             must_not_call = ["bash"]
             min_tool_errors = 1
             max_tool_errors = 2
+            must_fire_guards = ["cold_read"]
+            must_not_fire_guards = ["read_before_write"]
+            min_guard_fires = 1
+            max_guard_fires = 2
             max_wall_ms = 1000
             max_total_tokens = 2000
         "#;
@@ -220,6 +248,24 @@ mod tests {
         assert_eq!(fx.expect.must_not_call, vec!["bash"]);
         assert_eq!(fx.expect.min_tool_errors, Some(1));
         assert_eq!(fx.expect.max_tool_errors, Some(2));
+        assert_eq!(fx.expect.must_fire_guards, vec!["cold_read"]);
+        assert_eq!(fx.expect.must_not_fire_guards, vec!["read_before_write"]);
+        assert_eq!(fx.expect.min_guard_fires, Some(1));
+        assert_eq!(fx.expect.max_guard_fires, Some(2));
+    }
+
+    #[test]
+    fn guard_predicates_default_when_absent() {
+        let src = r#"
+            id = "x"
+            prompt = "p"
+            [expect]
+        "#;
+        let fx = Fixture::from_toml_str(src).unwrap();
+        assert!(fx.expect.must_fire_guards.is_empty());
+        assert!(fx.expect.must_not_fire_guards.is_empty());
+        assert!(fx.expect.min_guard_fires.is_none());
+        assert!(fx.expect.max_guard_fires.is_none());
     }
 
     #[test]
