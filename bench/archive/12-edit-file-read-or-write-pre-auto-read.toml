@@ -1,0 +1,77 @@
+# FROZEN PRE-(b) ANCHOR — do NOT run from the canonical task suite.
+#
+# This fixture is the predecessor of `bench/tasks/12-edit-file-read-or-
+# write.toml`. It captures the partial-recovery shape that held in the
+# narrow window between commit `b8710a9` (failure-memory wiring on the
+# read_before_write guard, 2026-05-17) and the auto-read landing later
+# the same day. At that time the model recovered the FIRST hop only:
+#
+#   turn 0: model emits edit_file → guard refuses + failure-memory
+#   turn 1: model emits read_file (first recovery hop) → ok
+#   turn 2: model produces FinalAnswer asking the user to provide
+#           "the new content for this line" instead of issuing edit_file
+#
+# Auto-read (option b) collapsed this two-hop chain at the harness
+# layer: the harness now performs the recovery read itself, so the
+# model only ever needs to emit edit_file. The canonical fixture
+# (`bench/tasks/12-edit-file-read-or-write.toml`) pins the new shape.
+#
+# Why keep this archive:
+#   This fixture is a REGRESSION CANARY for the auto-read path. If a
+#   future change disables or breaks the synthetic-read injection in
+#   `try_auto_read_for_rbw` (src/agent/mod.rs), the model falls back to
+#   first-hop-only recovery and *this fixture starts passing again*.
+#   That's the signal — an archive fixture flipping green means the
+#   harness regressed to the old behavior.
+#
+# How to use:
+#   bench-run --tasks bench/archive --filter 12-edit-file-read-or-write-pre-auto-read \
+#             --reps 3 --out /tmp/regression-check
+#   bench-replay --all bench/archive --runs /tmp/regression-check
+#
+#   - If the replay FAILS (predicates miss), the auto-read is working
+#     as intended. This is the steady-state expectation.
+#   - If the replay PASSES, you've regressed the auto-read path —
+#     investigate `src/agent/mod.rs::try_auto_read_for_rbw` and the
+#     wiring at the read_before_write guard branch.
+
+id = "12-edit-file-read-or-write-pre-auto-read"
+description = "FROZEN: pre-auto-read partial-recovery shape (first hop only). Regression canary — passes when auto-read regresses."
+prompt = "Change 'foo' to 'bar' in notes.txt."
+cwd_isolated = true
+
+[[seed_files]]
+path = "notes.txt"
+content = "line one with foo in it\nline two without it\n"
+
+[expect]
+stop_reason = "FinalAnswer"
+
+# Pre-(b) shape: exactly one dispatched call, read_file (the model's
+# first-hop recovery), with edit_file refused before dispatch by the
+# guard (so it doesn't count toward tool_calls).
+min_tool_calls = 1
+max_tool_calls = 1
+must_call_any_of = ["read_file"]
+must_not_call = ["list_dir", "list_files_recursive", "grep",
+                 "write_file", "edit_file", "bash"]
+
+# No synthetic calls in the pre-(b) world. If the auto-read fires,
+# read_file shows up as synthetic and this predicate fails — the
+# correct steady-state behavior post-(b).
+must_not_have_synthetic_calls = ["read_file", "edit_file", "write_file"]
+
+# Positive guard fire — same as the canonical fixture.
+must_fire_guards = ["read_before_write"]
+must_not_fire_guards = ["cold_read", "dedup", "length", "write_pressure",
+                        "turn_cap"]
+min_guard_fires = 1
+max_guard_fires = 1
+
+min_tool_errors = 0
+max_tool_errors = 0
+
+# Pre-(b) measured floor (Commit-E baseline): 3881 tokens, ~7.5s wall
+# across 3 reps. Caps match those values + the original headroom.
+max_wall_ms = 14000
+max_total_tokens = 4200
