@@ -1,4 +1,4 @@
-# Observability event schema (v2)
+# Observability event schema (v3)
 
 micro-mind emits append-only JSONL when run with `--record <dir>`:
 
@@ -32,11 +32,12 @@ Every line has the same envelope:
 Emitted once at startup when recording is enabled.
 
 ```json
-{"event":"session_start","cwd":"/Users/m/proj","model":"qwen25-1.5b-instruct","tools":["read_file","grep","..."],"schema_v":2}
+{"event":"session_start","cwd":"/Users/m/proj","model":"qwen25-1.5b-instruct","tools":["read_file","grep","..."],"schema_v":3}
 ```
 
 `schema_v` is optional (omitted by v1 emitters); when absent, readers should
-assume v1. v1 traces remain forward-compatible: every v2 field is optional.
+assume v1. v1 and v2 traces remain forward-compatible: every v2 and v3 field
+is optional with a documented default.
 
 ### `chat_request`
 
@@ -69,9 +70,13 @@ Emitted after the response is decoded (or after the request errors).
 
 ### `tool_call`
 
-Emitted just before a tool function is invoked. **Guard interceptions
-(`dedup`, `read_before_write`) do not emit this event** — they emit `guard`
-instead.
+Emitted just before a tool function is invoked. **Guard interceptions that
+end the iteration without dispatching (`dedup`) do not emit this event** —
+they emit `guard` only. The `read_before_write` guard *does* emit a
+`tool_call` / `tool_result` pair when the harness auto-reads the target on
+the model's behalf (v3); the pair carries `origin.kind =
+"synthetic_guard_recovery"` so consumers can distinguish it from model
+output.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -79,10 +84,13 @@ instead.
 | `name` | string | tool name (whitespace-trimmed) |
 | `arguments` | object | the parsed JSON args |
 | `tool_call_id` | string | echoes the assistant message's `tool_calls[].id` |
+| `origin` | object? | (v3) provenance — see [Tool provenance](#tool-provenance). Omitted when the call originated from the model (the common path). |
 
 ### `tool_result`
 
 Emitted after dispatch finishes (incl. unknown-tool / validation errors).
+Synthetic recoveries (v3) emit this event too, with `origin` set to mark
+the harness-injected path.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -94,6 +102,7 @@ Emitted after dispatch finishes (incl. unknown-tool / validation errors).
 | `bytes_out` | usize | size of the post-truncation body sent to the model |
 | `cached` | bool | served from `ToolCache` |
 | `error` | string? | tool-layer error message if any |
+| `origin` | object? | (v3) provenance — see [Tool provenance](#tool-provenance). Omitted when model-originated. |
 
 ### `guard`
 
@@ -127,6 +136,50 @@ fills it from the subprocess's stdout.
 
 Privacy/size tradeoff: traces now include verbatim model output. If that's
 a problem for a particular session, scrub the stop events post-hoc.
+
+## Tool provenance
+
+Schema v3 distinguishes model-originated tool calls from harness-injected
+ones via the optional `origin` field on `tool_call` and `tool_result`
+events. Two variants are defined:
+
+**Model-originated** (the common path): `origin` is omitted from the wire.
+Pre-v3 traces all fall into this bucket — consumers MUST treat a missing
+`origin` field as model-originated, never as "unknown."
+
+**Synthetic guard recovery**: harness fabricated this call as part of
+guard-driven recovery. Today this is only emitted by the `read_before_write`
+auto-read path (v3): when the guard refuses an `edit_file`/`write_file`
+against an unread target, the harness performs a bounded `read_file` itself
+and feeds the content into the conversation, collapsing what would be a
+two-hop model chain (refusal → model retries with read → model reads →
+model retries with edit) into a single hop the model can actually sustain
+on the 0% BFCL multi-turn floor (see `lessons.md` 2026-05-17).
+
+Wire form when present:
+
+```json
+"origin": {"kind": "synthetic_guard_recovery", "guard": "read_before_write"}
+```
+
+The `guard` field is required for the `synthetic_guard_recovery` variant
+and names the guard kind that triggered the auto-recovery. New synthetic
+sources opt in by adding their variant here.
+
+### Replay invariants
+
+- Bench predicates that don't assert provenance MUST behave identically
+  across v1/v2/v3 traces. Adding `origin` is purely additive.
+- The `must_have_synthetic_calls` / `must_not_have_synthetic_calls`
+  predicates on a fixture's `[expect]` table fail-closed when run against
+  a pre-v3 trace whose `origin` is uniformly omitted: predicates that
+  positively assert synthetic-call presence cannot be satisfied by a v1/v2
+  emitter. This is intentional — exercising the auto-read contract
+  requires a v3-emitting runtime.
+- The synthetic-recovery `tool_call` / `tool_result` events appear in
+  trace order *after* the corresponding `guard` event. Counterfactual
+  visibility: the refusal that motivated the auto-read is still present
+  in the trace, not silently rewritten.
 
 ## Stability guarantees
 

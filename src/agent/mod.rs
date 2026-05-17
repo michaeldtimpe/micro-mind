@@ -17,7 +17,15 @@ use crate::llm::types::{ChatMessage, Usage};
 use crate::repl::render;
 use crate::tools::cache::ToolCache;
 use crate::tools::{ToolCallResult, ToolDef, dispatch};
-use micro_mind::obs::{Event, RecorderHandle};
+use micro_mind::obs::{Event, Recorder, RecorderHandle, ToolOrigin};
+
+/// Maximum line count tolerated for an auto-read on `read_before_write`
+/// recovery. The tool layer's 24 KB byte default already constrains context
+/// poisoning by volume; this guards against pathological cases (minified
+/// or generated files with thousands of short lines) where the byte cap
+/// alone could still drown the model in line noise. 800 lines comfortably
+/// covers every source file in this repo.
+const AUTO_READ_LINE_CEILING: usize = 800;
 
 /// Reason the loop terminated, for /explain.
 #[derive(Debug, Clone)]
@@ -98,6 +106,128 @@ impl Session {
     pub fn pressure(&self) -> f32 {
         context::pressure(&self.messages, config::N_CTX)
     }
+}
+
+/// Attempt to recover from a `read_before_write` guard fire by performing
+/// a bounded `read_file` ourselves and returning its content. On success
+/// the caller surfaces the content to the model as a system note plus
+/// retry instruction, collapsing the two-hop chain (refusal → model reads
+/// → model retries with edit) into the single hop the 1.5 B model can
+/// sustain on the 0% BFCL multi-turn floor (see `lessons.md` 2026-05-17).
+///
+/// Bounding:
+///   - The `read_file` tool layer enforces its own byte cap (24 KB default
+///     / 64 KB hard), so we don't repeat that here.
+///   - We additionally refuse content with more than `AUTO_READ_LINE_CEILING`
+///     lines, catching pathological minified/generated files where the
+///     byte cap alone doesn't constrain line count.
+///
+/// Provenance:
+///   - Emits `ToolCall` and `ToolResult` events with
+///     `origin = ToolOrigin::SyntheticGuardRecovery { guard:
+///     "read_before_write" }` so trace consumers can distinguish the
+///     harness-injected call from model output (schema v3).
+///   - Always emits the `ToolResult` event, even on failure, so the trace
+///     is balanced (one call → one result, regardless of outcome).
+///
+/// Recursion invariant:
+///   - The synthetic dispatch is always `read_file`, never
+///     `write_file`/`edit_file`; `read_before_write` only fires on the
+///     latter, so the auto-read cannot itself trigger another auto-read.
+///     The single-hop guarantee is structural, not policy.
+fn try_auto_read_for_rbw(
+    recorder: &dyn Recorder,
+    tools_by_name: &HashMap<String, ToolDef>,
+    cache: &mut ToolCache,
+    target_path: &str,
+    turn: u32,
+    blocked_tool_call_id: &str,
+) -> Option<ToolCallResult> {
+    let synthetic_id = format!("synthetic-rbw-{blocked_tool_call_id}");
+    let args = serde_json::json!({ "path": target_path });
+
+    let origin = ToolOrigin::SyntheticGuardRecovery {
+        guard: "read_before_write".into(),
+    };
+
+    recorder.record(Event::ToolCall {
+        turn,
+        name: "read_file".into(),
+        arguments: args.clone(),
+        tool_call_id: synthetic_id.clone(),
+        origin: Some(origin.clone()),
+    });
+    render::tool_call_start("read_file", &args);
+
+    let mut call = dispatch("read_file", &args, &synthetic_id, tools_by_name, cache);
+
+    if call.error.is_some() {
+        recorder.record(Event::ToolResult {
+            turn,
+            name: "read_file".into(),
+            tool_call_id: synthetic_id,
+            ok: false,
+            wall_ms: call.wall_ms,
+            bytes_out: 0,
+            cached: call.cached,
+            error: call.error.clone(),
+            origin: Some(origin),
+        });
+        render::tool_call_result(&call);
+        return None;
+    }
+
+    let line_count = call.result.lines().count();
+    if line_count > AUTO_READ_LINE_CEILING {
+        let err = format!(
+            "auto-read aborted: {line_count} lines exceeds {AUTO_READ_LINE_CEILING}-line ceiling"
+        );
+        call.error = Some(err.clone());
+        recorder.record(Event::ToolResult {
+            turn,
+            name: "read_file".into(),
+            tool_call_id: synthetic_id,
+            ok: false,
+            wall_ms: call.wall_ms,
+            bytes_out: call.bytes_out,
+            cached: call.cached,
+            error: Some(err),
+            origin: Some(origin),
+        });
+        render::tool_call_result(&call);
+        return None;
+    }
+
+    recorder.record(Event::ToolResult {
+        turn,
+        name: "read_file".into(),
+        tool_call_id: synthetic_id,
+        ok: true,
+        wall_ms: call.wall_ms,
+        bytes_out: call.bytes_out,
+        cached: call.cached,
+        error: None,
+        origin: Some(origin),
+    });
+    render::tool_call_result(&call);
+    Some(call)
+}
+
+/// Build the system-note body that delivers the auto-read content to the
+/// model alongside an explicit retry instruction. The harness's
+/// counterfactual-visibility marker per Reviewer 3: the trace already
+/// shows the guard fired (`Guard` event) and the harness intervened
+/// (synthetic `ToolCall`/`ToolResult`); this note tells the *model* the
+/// same story in the conversation.
+fn auto_read_recovery_note(path: &str, content: &str) -> String {
+    format!(
+        "Guard read_before_write performed an automatic bounded read of {path}. \
+         The content is shown between the markers below. Now retry the original \
+         tool call with this content visible in scope.\n\
+         --- begin {path} ---\n\
+         {content}\n\
+         --- end {path} ---"
+    )
 }
 
 /// Process one user message: chat → tool dispatch → loop → final answer or guard.
@@ -257,18 +387,46 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
                         detail: Some(path.to_string()),
                     });
                     render::guard(&format!("read-before-write → {}", path));
+                    // Auto-read on guard refusal (lessons.md 2026-05-17 option
+                    // b). Collapses the two-hop chain (refusal → model reads
+                    // → model retries) into one hop at the harness layer.
+                    // Preserves counterfactual visibility by always pushing
+                    // the refusal note as the tool_result for the blocked
+                    // call AND, on success, pushing the auto-read content as
+                    // a separate system message. Falls back to the existing
+                    // refusal+failure-memory shape if the auto-read fails or
+                    // hits the line ceiling. Provenance is recorded via the
+                    // synthetic `ToolCall`/`ToolResult` events (schema v3).
                     state
                         .messages
                         .push(ChatMessage::tool_result(&tc.id, &tc.function.name, &note));
-                    // Mirror the dispatch-path failure-memory injection so the
-                    // 1.5B model gets the same "do not repeat" nudge that
-                    // drives placeholder-rejection recovery (lessons.md
-                    // 2026-05-17). The refusal note above already contains the
-                    // recovery instruction; the system note is the second
-                    // load-bearing input that turns coaching into retry.
-                    if let Some(memory_note) =
+                    let synth = try_auto_read_for_rbw(
+                        state.recorder.as_ref(),
+                        &state.tools_by_name,
+                        &mut state.cache,
+                        path,
+                        turns,
+                        &tc.id,
+                    );
+                    if let Some(synth_call) = synth {
+                        state
+                            .messages
+                            .push(ChatMessage::system(auto_read_recovery_note(
+                                path,
+                                &synth_call.result,
+                            )));
+                        // Mark the path as read so the model's retry of
+                        // `write_file`/`edit_file` doesn't re-trigger the
+                        // guard. Without this, the next turn would loop
+                        // through the same refusal path on every iteration.
+                        reads.record_read(&synth_call.name, &synth_call.arguments);
+                    } else if let Some(memory_note) =
                         coach::guard_failure_memory_note(&tc.function.name, "read_before_write")
                     {
+                        // Auto-read fallback: mirror the pre-(b) shape — the
+                        // model gets the refusal note + a do-not-repeat
+                        // nudge and has to compose the read itself. Same
+                        // failure-memory wiring as the dispatch path.
                         state.messages.push(ChatMessage::system(memory_note));
                     }
                     continue;
@@ -314,6 +472,7 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
                 name: tc.function.name.clone(),
                 arguments: args.clone(),
                 tool_call_id: tc.id.clone(),
+                origin: None,
             });
             render::tool_call_start(&tc.function.name, &args);
             let mut call = dispatch(
@@ -344,6 +503,7 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
                 bytes_out: call.bytes_out,
                 cached: call.cached,
                 error: call.error.clone(),
+                origin: None,
             });
 
             // Semantic compression as a system note alongside the raw result.

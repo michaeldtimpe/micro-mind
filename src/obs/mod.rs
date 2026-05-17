@@ -15,4 +15,6 @@
 
 pub mod recorder;
 
-pub use recorder::{Event, JsonlRecorder, NoopRecorder, Recorder, RecorderHandle, SCHEMA_V};
+pub use recorder::{
+    Event, JsonlRecorder, NoopRecorder, Recorder, RecorderHandle, SCHEMA_V, ToolOrigin,
+};
