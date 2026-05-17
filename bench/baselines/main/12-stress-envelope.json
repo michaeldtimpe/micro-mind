@@ -1,0 +1,68 @@
+{
+  "fixture": "12-edit-file-read-or-write",
+  "category": "guard-intervention-characterization",
+  "binary_state": "phase1-b-auto-read b-toolresult delivery (synthetic tool_call/tool_result pair)",
+  "reps_total": 30,
+  "reps_per_run": 10,
+  "runs": 3,
+  "cold_server_restarts_between_runs": true,
+  "sampling": {
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "seed": 42,
+    "max_tokens": 2048,
+    "repeat_penalty": 1.1
+  },
+  "shapes_observed": {
+    "clean": 14,
+    "length_truncated": 3,
+    "verify_read": 12,
+    "no_call_fa": 1
+  },
+  "shape_descriptions": {
+    "clean": "synth read_file + model edit_file; FinalAnswer",
+    "verify_read": "synth read_file + model edit_file + model verification read_file; FinalAnswer",
+    "length_truncated": "synth read_file + model goes into prose-bash code-block loop, hits max_tokens; Length",
+    "no_call_fa": "synth read_file + model prose-displays edited content without calling edit_file; FinalAnswer"
+  },
+  "task_success_count": 26,
+  "task_success_rate": 0.8666666666666667,
+  "phase_b_predicate_pass_rate": "(see fixture 12 TOML; min_model_tool_calls=1 rejects length_truncated and no_call_fa)",
+  "tokens": {
+    "p50": 4485,
+    "p95": 6355,
+    "min": 2782,
+    "max": 6355
+  },
+  "wall_ms": {
+    "p50": 9637,
+    "p95": 68815,
+    "min": 3260,
+    "max": 69302
+  },
+  "comparison": {
+    "pre_this_work_baseline_commit_E": {
+      "task_success": "0/3 second-hop (model delegates to user)",
+      "tokens_p50": 3881
+    },
+    "a_probe_system_note_nudge": {
+      "task_success": "7/10",
+      "tokens_p50": "8400-10800",
+      "note": "preserved on phase0-a-probe branch"
+    },
+    "b_current_system_note_delivery": {
+      "task_success": "40% (4/10 stress)",
+      "tokens_p50": 4588,
+      "note": "initial 3/3 baseline was warm-cache outlier"
+    },
+    "b_toolresult_pair_delivery_THIS": {
+      "task_success": "87% (26/30 stress)",
+      "tokens_p50": 4485
+    },
+    "phase_c_prompt_rule_REVERTED": {
+      "task_success": "60% (6/10)",
+      "note": "eliminated bash-loop and verify-read but redistributed mass into no-call-FA (3%\u219240%); reverted"
+    }
+  },
+  "why_this_is_a_guard_intervention_fixture_not_task_success": "Per Reviewer 3 critique 2026-05-17: fixture 12 with the relaxed Phase B predicates measures whether the harness auto-read fires correctly and the model composes at least one tool call beyond it. It does NOT pin a single deterministic task-completion shape (the model genuinely has multiple stable continuations at the BFCL 0% multi-turn floor). Distinguishes from task-success fixtures 01-08, 11 which DO pin single shapes."
+}

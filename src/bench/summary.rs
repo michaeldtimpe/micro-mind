@@ -54,6 +54,16 @@ pub struct Summary {
     /// `#[serde(default)]` so pre-v3 baselines deserialize cleanly.
     #[serde(default)]
     pub synthetic_tool_calls_by_name: BTreeMap<String, u32>,
+    /// Model-emitted tool call count — `tool_calls` minus
+    /// `synthetic_tool_calls`. Derived during `summarize_trace`. Lets
+    /// fixtures assert compositionality even when the total tool_calls
+    /// count is dominated by harness intervention (e.g., fixture 12 needs
+    /// to require ≥1 model-emitted call beyond the synthetic auto-read,
+    /// or the predicate trivially passes on the no-call-FA failure
+    /// shape where the synthetic read fires but the model never composes
+    /// the recovery edit). `#[serde(default)]` for pre-v3 compat.
+    #[serde(default)]
+    pub model_tool_calls: u32,
 }
 
 /// Compute a Summary from a list of trace events. Pure.
@@ -138,6 +148,11 @@ pub fn summarize_trace(events: &[TraceEvent]) -> Summary {
             Event::SessionStart { .. } => {}
         }
     }
+    // Derive model_tool_calls after the loop so the subtraction is stable
+    // regardless of event order in the trace. `synthetic_tool_calls` is a
+    // strict subset of `tool_calls` by construction in the ToolResult arm
+    // above, so this never wraps.
+    s.model_tool_calls = s.tool_calls.saturating_sub(s.synthetic_tool_calls);
     s
 }
 
@@ -280,6 +295,14 @@ pub fn check_expectations(fx: &Fixture, s: &Summary) -> Vec<String> {
         if s.synthetic_tool_calls_by_name.contains_key(forbidden) {
             fails.push(format!("forbidden synthetic call: {forbidden}"));
         }
+    }
+    if let Some(min) = fx.expect.min_model_tool_calls
+        && s.model_tool_calls < min
+    {
+        fails.push(format!(
+            "model_tool_calls={} < min={min} (synthetic={}, total={})",
+            s.model_tool_calls, s.synthetic_tool_calls, s.tool_calls
+        ));
     }
     if let Some(max) = fx.expect.max_wall_ms
         && s.wall_ms > max
@@ -864,6 +887,115 @@ mod tests {
         assert!(fx.expect.must_have_synthetic_calls.is_empty());
         assert!(fx.expect.must_not_have_synthetic_calls.is_empty());
         let s = summary_with_synthetic("read_file");
+        assert!(check_expectations(&fx, &s).is_empty());
+    }
+
+    #[test]
+    fn summarize_trace_derives_model_tool_calls() {
+        // Two ToolResult events: model edit_file + synthetic read_file.
+        // tool_calls=2, synthetic_tool_calls=1, model_tool_calls=1.
+        let evs = vec![
+            te(Event::ToolResult {
+                turn: 0,
+                name: "edit_file".into(),
+                tool_call_id: "m1".into(),
+                ok: true,
+                wall_ms: 1,
+                bytes_out: 50,
+                cached: false,
+                error: None,
+                origin: None,
+            }),
+            te(Event::ToolResult {
+                turn: 0,
+                name: "read_file".into(),
+                tool_call_id: "s1".into(),
+                ok: true,
+                wall_ms: 1,
+                bytes_out: 100,
+                cached: false,
+                error: None,
+                origin: Some(ToolOrigin::SyntheticGuardRecovery {
+                    guard: "read_before_write".into(),
+                }),
+            }),
+        ];
+        let s = summarize_trace(&evs);
+        assert_eq!(s.tool_calls, 2);
+        assert_eq!(s.synthetic_tool_calls, 1);
+        assert_eq!(s.model_tool_calls, 1, "tool_calls minus synthetic");
+    }
+
+    #[test]
+    fn min_model_tool_calls_fails_on_no_call_fa_shape() {
+        // Reviewer 3's compositionality contract for fixture 12 Phase B:
+        // synthetic auto-read fired but the model emitted no tool calls of
+        // its own on the recovery turn. Without min_model_tool_calls, the
+        // must_have_synthetic_calls predicate would trivially pass; with
+        // it, the fixture correctly fails.
+        let fx_src = r#"
+            id = "t"
+            prompt = "p"
+            [expect]
+            min_model_tool_calls = 1
+            must_have_synthetic_calls = ["read_file"]
+        "#;
+        let fx = Fixture::from_toml_str(fx_src).unwrap();
+        let mut synth_by_name = BTreeMap::new();
+        synth_by_name.insert("read_file".into(), 1);
+        let mut tool_by_name = BTreeMap::new();
+        tool_by_name.insert("read_file".into(), 1);
+        let s = Summary {
+            tool_calls: 1,
+            tool_calls_by_name: tool_by_name,
+            synthetic_tool_calls: 1,
+            synthetic_tool_calls_by_name: synth_by_name,
+            model_tool_calls: 0, // failure: model emitted no calls
+            ..Default::default()
+        };
+        let fails = check_expectations(&fx, &s);
+        assert_eq!(fails.len(), 1, "{fails:?}");
+        assert!(
+            fails[0].contains("model_tool_calls=0 < min=1"),
+            "diagnostic should surface model vs synthetic accounting: {}",
+            fails[0]
+        );
+        assert!(
+            fails[0].contains("synthetic=1"),
+            "diagnostic should attribute the synthetic count: {}",
+            fails[0]
+        );
+    }
+
+    #[test]
+    fn min_model_tool_calls_passes_when_model_call_present() {
+        let fx_src = r#"
+            id = "t"
+            prompt = "p"
+            [expect]
+            min_model_tool_calls = 1
+        "#;
+        let fx = Fixture::from_toml_str(fx_src).unwrap();
+        let s = Summary {
+            tool_calls: 2,
+            synthetic_tool_calls: 1,
+            model_tool_calls: 1,
+            ..Default::default()
+        };
+        assert!(check_expectations(&fx, &s).is_empty());
+    }
+
+    #[test]
+    fn min_model_tool_calls_defaults_pass_when_absent() {
+        let fx_src = r#"
+            id = "t"
+            prompt = "p"
+            [expect]
+        "#;
+        let fx = Fixture::from_toml_str(fx_src).unwrap();
+        // Even a Summary with zero model_tool_calls passes when the
+        // predicate is unset.
+        let s = Summary::default();
         assert!(check_expectations(&fx, &s).is_empty());
     }
 
