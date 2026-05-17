@@ -260,6 +260,17 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
                     state
                         .messages
                         .push(ChatMessage::tool_result(&tc.id, &tc.function.name, &note));
+                    // Mirror the dispatch-path failure-memory injection so the
+                    // 1.5B model gets the same "do not repeat" nudge that
+                    // drives placeholder-rejection recovery (lessons.md
+                    // 2026-05-17). The refusal note above already contains the
+                    // recovery instruction; the system note is the second
+                    // load-bearing input that turns coaching into retry.
+                    if let Some(memory_note) =
+                        coach::guard_failure_memory_note(&tc.function.name, "read_before_write")
+                    {
+                        state.messages.push(ChatMessage::system(memory_note));
+                    }
                     continue;
                 }
             }
@@ -282,6 +293,18 @@ pub fn run_turn(state: &mut Session, user_input: &str) -> Result<()> {
                 state
                     .messages
                     .push(ChatMessage::tool_result(&tc.id, &tc.function.name, &note));
+                // Symmetric with read_before_write: ask coach whether this
+                // guard kind wants a failure-memory nudge. Returns None for
+                // cold_read today (the refusal note already steers toward
+                // "answer the user directly"), so the call is a no-op — but
+                // wiring it here means new guard kinds inherit the option
+                // through `guard_failure_memory_note` rather than needing
+                // per-site code changes.
+                if let Some(memory_note) =
+                    coach::guard_failure_memory_note(&tc.function.name, "cold_read")
+                {
+                    state.messages.push(ChatMessage::system(memory_note));
+                }
                 continue;
             }
 

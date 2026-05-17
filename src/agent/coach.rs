@@ -99,6 +99,38 @@ pub fn failure_memory_note(call: &ToolCallResult) -> Option<String> {
     ))
 }
 
+/// Failure-memory note for guard refusals — the analog of
+/// `failure_memory_note` for the `continue`-style guard branches in
+/// `agent/mod.rs` (read_before_write, cold_read) that never reach
+/// `dispatch` and therefore never accumulate a `ToolCallResult`.
+///
+/// Returns `Some(note)` only for guard kinds where retry-with-different-
+/// shape is the productive outcome. The refusal note pushed as the
+/// tool_result already contains the recovery instruction ("Call read_file
+/// first" / "Call list_dir … then retry write_file") — what's missing in
+/// the guard path versus the placeholder-rejection path is the
+/// "do not repeat" system nudge. Adding it closes the gap documented in
+/// `lessons.md` 2026-05-17 (`read_before_write` 0/3 recovery vs.
+/// placeholder 9/10).
+///
+/// Returns `None` for guard kinds where retry is either undesired
+/// (`cold_read`'s refusal already steers toward "answer the user
+/// directly") or structurally pointless (`length`, `turn_cap` end the
+/// loop; `dedup`, `write_pressure` are currently unreachable on prompt
+/// bait per `09`/`10`). Adding a memory note for those risks unlocking
+/// paths whose non-fire shape is intentionally pinned by their anchor
+/// fixtures.
+pub fn guard_failure_memory_note(tool: &str, kind: &str) -> Option<String> {
+    match kind {
+        "read_before_write" => Some(format!(
+            "The previous {tool} call was refused by the read_before_write guard. \
+             Do not repeat the same call unchanged. Read the target path first \
+             (call read_file on it), then re-issue the {tool} call."
+        )),
+        _ => None,
+    }
+}
+
 fn first_line(s: &str) -> String {
     s.lines().next().unwrap_or(s).trim().to_string()
 }
@@ -185,5 +217,47 @@ mod tests {
     fn failure_memory_absent_on_success() {
         let c = ok_call("read_file", "contents");
         assert!(failure_memory_note(&c).is_none());
+    }
+
+    #[test]
+    fn guard_failure_memory_fires_for_read_before_write_edit() {
+        let note = guard_failure_memory_note("edit_file", "read_before_write");
+        let note = note.expect("read_before_write should produce a memory note");
+        assert!(note.contains("edit_file"));
+        assert!(note.contains("read_file"));
+        assert!(note.contains("do not repeat") || note.contains("Do not repeat"));
+    }
+
+    #[test]
+    fn guard_failure_memory_fires_for_read_before_write_write() {
+        // Same kind, different tool. The note must surface the tool name
+        // so the model sees the actual call shape it should not repeat.
+        let note = guard_failure_memory_note("write_file", "read_before_write");
+        let note = note.expect("read_before_write should produce a memory note");
+        assert!(note.contains("write_file"));
+    }
+
+    #[test]
+    fn guard_failure_memory_silent_for_cold_read() {
+        // cold_read's refusal already says "Answer the user directly" —
+        // adding a "do not repeat" nudge on top would be redundant and
+        // risks unlocking the 03-decline-irrelevant non-call shape.
+        assert!(guard_failure_memory_note("read_file", "cold_read").is_none());
+    }
+
+    #[test]
+    fn guard_failure_memory_silent_for_unreachable_guards() {
+        // 09/10 pin these as non-fire anchors. A memory note here would
+        // be untestable and risks future unlocks.
+        assert!(guard_failure_memory_note("read_file", "dedup").is_none());
+        assert!(guard_failure_memory_note("list_dir", "write_pressure").is_none());
+    }
+
+    #[test]
+    fn guard_failure_memory_silent_for_terminal_guards() {
+        // length / turn_cap end the loop — a memory note can't influence
+        // anything because there is no next turn.
+        assert!(guard_failure_memory_note("read_file", "length").is_none());
+        assert!(guard_failure_memory_note("read_file", "turn_cap").is_none());
     }
 }
