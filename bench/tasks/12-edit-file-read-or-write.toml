@@ -2,54 +2,51 @@
 #
 # Second positive guard-fire fixture in the suite (after 11). Baits
 # `read_before_write` on `edit_file` with a naturally underspecified
-# prompt and captures the post-Commit-E partial-recovery shape.
+# prompt and captures the post-(b) auto-read recovery shape.
 #
-# Two findings layered into this fixture:
+# Evolution of this fixture across three landings (all 2026-05-17):
 #
-# 1) The 2026-05-17 "0/3 recovery" finding (initial commit of this
-#    fixture, before the failure-memory wiring) was superseded the same
-#    day by wiring `coach::guard_failure_memory_note` into the
-#    read_before_write guard branch. The "do not repeat" system nudge
-#    that drives placeholder-rejection recovery (11-write-file-
-#    placeholder) was missing from the guard `continue` path; adding it
-#    closes that structural gap.
+#   1) Original commit pinned the 0/3 recovery shape — model emitted
+#      edit_file, guard refused, model apologized-and-stopped.
+#   2) `guard_failure_memory_note` wired into the read_before_write
+#      `continue` branch lifted recovery to 3/3 on the FIRST hop only:
+#      model performs read_file but stops before composing edit_file,
+#      hitting `neo-llm-bench`'s 0% BFCL multi-turn floor for the
+#      tool-result-to-different-tool transition.
+#   3) Auto-read on guard refusal (lessons.md 2026-05-17 third entry,
+#      option (b)) collapses the two-hop chain into a single hop at the
+#      harness layer. When the guard fires, the harness performs a
+#      bounded read_file ITSELF and surfaces the content to the model
+#      as a system note. The model's next turn observes the content
+#      already in scope and only needs to emit edit_file — the single
+#      hop the model CAN sustain.
 #
-# 2) Recovery now fires for the FIRST hop only. Across 3 reps at
-#    temp=0, bit-exact at 3881 total_tokens:
-#      turn 0: model emits edit_file → guard refuses + failure-memory
-#      turn 1: model emits read_file (the first recovery hop) → ok
-#      turn 2: model produces FinalAnswer asking the user to provide
-#              "the new content for this line" instead of issuing
-#              edit_file
-#    The user's original prompt already specified the replacement
-#    ("Change 'foo' to 'bar'"), so the second-hop ask is the same
-#    "delegate-tool-work-to-the-user" pattern documented in the prior
-#    entry — just one level deeper in the chain.
+# This fixture now pins the AUTO-READ shape:
+#   - 2 dispatched tool calls per rep (1 synthetic read_file from the
+#     harness + 1 model-emitted edit_file)
+#   - read_before_write guard fires exactly once
+#   - Exactly one synthetic call, kind read_file
+#   - FinalAnswer, edit succeeds
 #
-# Root cause of the second-hop gap: composing a DIFFERENT tool call
-# (edit_file) after consuming a tool RESULT (read_file's output) is
-# multi-turn-chain territory. neo-llm-bench measured 0% on BFCL
-# multi-turn at this model size. The 1.5 B model can do one tool hop
-# with a deterministic reasoning chain; what it can't sustain is the
-# chain that follows up on a tool result and emits a different tool's
-# composition. See `lessons.md` 2026-05-17 (second entry).
+# Measurement from the (b) shape-check run (2026-05-17, reps=3):
+#   - 4480 total tokens (bit-identical across reps)
+#   - 4.8-11s wall (vs (a) probe's 14-34s, ~3x improvement)
+#   - 3/3 task success (vs (a) probe's 7/10, vs Commit-E's 0/3 second hop)
 #
-# Fixture purpose:
-#   1. Lock the partial-recovery shape (1 tool_call, read_file,
-#      guard fires once) as the regression anchor.
-#   2. Any future improvement that closes the second hop — e.g. a
-#      system note after a recovery-read saying "you have read the
-#      file; now perform the original edit" — flips
-#      `min_tool_calls=1, max_tool_calls=1` → 2 and that's the
-#      intended signal.
+# Predicate-flip provenance:
+#   Pre-(b) anchor lives at `bench/archive/12-edit-file-read-or-write-
+#   pre-auto-read.toml` — running it against the current harness will
+#   intentionally fail (the shape it pins no longer holds), and that's
+#   the contract: if the auto-read is ever disabled or regressed, the
+#   archive fixture flips green and signals the gap.
 
 id = "12-edit-file-read-or-write"
-description = "Bait `read_before_write` for `edit_file`. With failure-memory wiring (Commit E), model performs first-hop recovery (read_file) but stops before the second hop (edit_file), delegating the edit back to the user. Locks the partial-recovery shape."
+description = "Bait `read_before_write` for `edit_file`. With auto-read landed (option b), the harness synthesizes the recovery read_file; the model only needs to emit the final edit_file. Locks the synthetic-read + model-edit shape."
 prompt = "Change 'foo' to 'bar' in notes.txt."
 cwd_isolated = true
 
-# Single "foo" occurrence so a hypothetical future full-recovery branch
-# wouldn't fail spuriously on edit_file's unique-match enforcement.
+# Single "foo" occurrence: edit_file's unique-match enforcement passes
+# without needing replace_all=true.
 [[seed_files]]
 path = "notes.txt"
 content = "line one with foo in it\nline two without it\n"
@@ -57,17 +54,27 @@ content = "line one with foo in it\nline two without it\n"
 [expect]
 stop_reason = "FinalAnswer"
 
-# Exactly one dispatched call: read_file, the first recovery hop. The
-# initial edit_file emission is refused by the guard before dispatch
-# and doesn't count toward tool_calls (visible as
-# `native_tool_calls=1` on turn 0, but no ToolResult event). A future
-# tool_call beyond this — particularly edit_file completing the
-# chain — would flip the predicate and that's the desired signal.
-min_tool_calls = 1
-max_tool_calls = 1
-must_call_any_of = ["read_file"]
+# Exactly two dispatched calls: the synthetic read_file emitted by the
+# harness as part of auto-read recovery, and the model's edit_file. A
+# third call would mean the model is doing extra work — typically a
+# redundant read on top of the harness's auto-read — and that's a
+# regression signal. The count-based predicate is robust to provenance:
+# a redundant model `read_file` would bump tool_calls to 3 and fail.
+min_tool_calls = 2
+max_tool_calls = 2
+must_call_all_of = ["edit_file", "read_file"]
 must_not_call = ["list_dir", "list_files_recursive", "grep",
-                 "write_file", "edit_file", "bash"]
+                 "write_file", "bash"]
+
+# Provenance-aware predicates (schema v3). The read_file MUST be
+# synthetic (i.e., emitted by the harness's auto-read). If a future
+# regression causes the model to emit read_file directly while the
+# harness's synthesis is disabled, `must_have_synthetic_calls` flips
+# RED and that's the signal. Defensive: assert nothing mutating is
+# ever synthesized — a synthetic edit_file/write_file would be a
+# correctness bug.
+must_have_synthetic_calls = ["read_file"]
+must_not_have_synthetic_calls = ["edit_file", "write_file"]
 
 # Positive guard fire — load-bearing assertion. Exactly one fire,
 # kind=read_before_write. The other guards stay silent (canary set).
@@ -78,15 +85,19 @@ min_guard_fires = 1
 max_guard_fires = 1
 
 # Guard refusals push a note as a tool_result with ok=true (not an
-# error). The recovery read_file also succeeds. No tool_errors.
+# error). The synthetic auto-read also succeeds. The model's edit_file
+# succeeds. No tool_errors.
 min_tool_errors = 0
 max_tool_errors = 0
 
-# Observed wall_ms across 3 reps: 7516, 7614, 7758. 14000 gives ~6.2s
-# headroom — wider because this is now a 3-turn flow with a recovery
-# read on the second turn.
-max_wall_ms = 14000
+# Observed wall_ms across 3 reps at the (b) shape-check: 4801, 7924,
+# 10959. The 10959 outlier reflects cold-cache state on the first rep
+# after server start (documented in lessons.md 2026-05-15); 15000 gives
+# ~4 s headroom over the worst observed.
+max_wall_ms = 15000
 # Architectural floor at temp=0, measured 2026-05-17 across 3 reps
-# post-Commit-E: 3881 total tokens deterministic. 4200 gives ~320
-# tokens of headroom, matching the 03/04/12-pre-recovery convention.
-max_total_tokens = 4200
+# post-(b): 4480 total tokens bit-identical. 5000 gives ~520 tokens of
+# headroom, matching the standing "measured floor + ~10% headroom"
+# convention (the looser convention used by 03 doesn't apply here
+# because (b) eliminates the spurious-chain-of-reasoning variance).
+max_total_tokens = 5000
